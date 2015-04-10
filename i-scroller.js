@@ -3,16 +3,25 @@ module.exports = function (window) {
 
     require('./css/i-scroller.css'); // <-- define your own itag-name here
 
-    var itagCore = require('itags.core')(window),
+    var margePx = 100,
+        itagCore = require('itags.core')(window),
         itagName = 'i-scroller', // <-- define your own itag-name here
         DOCUMENT = window.document,
         ITSA = window.ITSA,
-        IFormElement = require('i-formelement')(window),
-        Itag;
+        IParcel = require('i-parcel')(window),
+        microtemplate = require('i-parcel/lib/microtemplate.js'),
+        repositionItems, Itag;
+
+    repositionItems = function(element) {
+        var listsize = element.model['list-size'],
+            margeItems = Math.ceil(margePx/listsize),
+            viewHeight = element.offsetHeight,
+            visibleItems = Math.ceil(viewHeight/listsize);
+    };
 
     if (!window.ITAGS[itagName]) {
 
-        Itag = IFormElement.subClass(itagName, {
+        Itag = IParcel.subClass(itagName, {
             /*
              *
              * @property attrs
@@ -21,9 +30,9 @@ module.exports = function (window) {
             */
             attrs: {
                 'list-size': 'string',
-                vertical: 'boolean',
+                horizontal: 'boolean',
                 disabled: 'boolean',
-                focusable: 'boolean',
+                'items-focusable': 'boolean',
                 scrollbar: 'boolean',
                 required: 'boolean',
                 value: 'string',
@@ -34,24 +43,27 @@ module.exports = function (window) {
 
             init: function() {
                 var element = this,
-                    designNode = element.getItagContainer(),
-                    itemNodes = designNode.getAll('>option'),
-                    items = [],
-                    value = element.model.value || -1;
-                itemNodes.forEach(function(node, i) {
-                    items[items.length] = node.getHTML();
-                });
+                    // designNode = element.getItagContainer(),
+                    model = element.model,
+                    value = model.value || -1,
+                    listsize = model['list-size'] || '2em';
 
                 element.defineWhenUndefined('value', value)
-                       .defineWhenUndefined('items', items)
+                       .defineWhenUndefined('list-size', listsize)
                         // set the reset-value to the inital-value in case `reset-value` was not present
                        .defineWhenUndefined('reset-value', value);
 
                 // store its current value, so that valueChange-event can fire:
                 element.setData('i-scroller-value', value);
 
-                element.cleanupEvents();
-                element.setupEvents();
+                // element.cleanupEvents();
+                // element.setupEvents();
+
+                // make it a focusable form-element:
+                element.setAttr('itag-formelement', 'true', true);
+
+                // define unique id:
+                element['i-id'] = ITSA.idGenerator('i-scroller');
             },
 
            /**
@@ -66,30 +78,62 @@ module.exports = function (window) {
             */
             render: function() {
                 var element = this,
-                    model = element.model,
-                    items = model.items,
-                    content;
-                // building the template of the itag:
-                content = '<span>'; // needs container-span because this always needs to have position=relative
-                content += '<span'+(model.focusable ? ' plugin-fm="true" fm-manage="option" fm-keyup="38" fm-keydown="40" fm-noloop="true">' : '>');
-                len = items.length;
-                for (i=0; i<len; i++) {
-                    item = items[i];
-                    content += item;
-                }
+                    css = '<style type="text/css"></style>',
+                    content = '<span plugin-dd="true" dd-direction="y"></span>';
+                // mark element its i-id:
+                element.setAttr('i-id', element['i-id']);
 
-                content += '</span></span>';
+                // set element css:
+                element.addSystemElement(css, false, true);
                 // set the content:
                 element.setHTML(content);
             },
 
             sync: function() {
+                var element = this,
+                    model = element.model,
+                    items = model.items,
+                    listsize = model['list-size'],
+                    template = model.template,
+                    scrollContainer = element.getElement('>span'),
+                    cssNode = element.getElement('>style', true),
+                    content, i, len, item, css;
+
+
+                css = 'i-scroller[i-id="'+element['i-id']+'"] span.item{'+(model.horizontal ? 'width' : 'height')+':'+listsize+'}';
+                cssNode.setText(css);
+
+                // building the content of the itag:
+                content = '';
+                len = items.length;
+                for (i=0; i<len; i++) {
+                    item = items[i];
+                    content += '<span class="item">';
+                    if (typeof item==='string') {
+                        content += item;
+                    }
+                    else {
+                        if (template.indexOf('<%')!==-1) {
+                            content += microtemplate(template, item);
+                        }
+                        else if (/{\S+}/.test(template)) {
+                            content += template.substitute(item);
+                        }
+                        else {
+                            content += template;
+                        }
+                    }
+                    content += '</span>';
+                }
+                // set the content:
+                scrollContainer.setHTML(content);
             },
 
             destroy: function() {
             }
         });
 
+        itagCore.setLazyBinding(Itag, true);
         window.ITAGS[itagName] = Itag;
     }
 

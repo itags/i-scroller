@@ -30,3 +30,38 @@ i-scroller:not(.itag-rendered) * {
 }
 /* ================================= */
 
+i-scroller {
+    margin: 0;
+    display: inline-block;
+    position: relative;
+    vertical-align: top;
+    border: solid 1px #000;
+    min-width: 1em;
+    min-height: 1em;
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+i-scroller >span,
+i-scroller span.item {
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+i-scroller >span {
+    position: relative;
+}
+
+i-scroller span.item {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+i-scroller >span[dd-draggable="true"] {
+    float: inherit;
+}

@@ -37,7 +37,7 @@
     },
     "dependencies": {
         "itags.core": "itags/core",
-        "i-formelement": "itags/i-formelement"
+        "i-parcel": "itags/i-parcel"
     },
     "devDependencies": {
         "chai": "^1.9.1",
