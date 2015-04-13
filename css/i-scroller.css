@@ -52,6 +52,13 @@ i-scroller span.item {
 
 i-scroller >span {
     position: relative;
+    display: block;
+    width: 100%;
+}
+
+i-scroller[horizontal="true"] >span {
+    width: inherit;
+    height: 100%;
 }
 
 i-scroller span.item {
@@ -62,6 +69,6 @@ i-scroller span.item {
     overflow: hidden;
 }
 
-i-scroller >span[dd-draggable="true"] {
-    float: inherit;
+i-scroller span.item.shifted {
+    color: #F00;
 }
