@@ -38,6 +38,7 @@ i-scroller {
     border: solid 1px #000;
     min-width: 1em;
     min-height: 1em;
+    overflow: hidden;
     -webkit-box-sizing: border-box;
     -moz-box-sizing: border-box;
     box-sizing: border-box;
@@ -71,4 +72,8 @@ i-scroller span.item {
 
 i-scroller span.item.shifted {
     color: #F00;
+}
+
+i-scroller span.item.empty {
+    opacity: 0;
 }
