@@ -3,7 +3,7 @@ module.exports = function (window) {
 
     require('./css/i-scroller.css'); // <-- define your own itag-name here
 
-    var margeItems = 5,
+    var margeItems = 2,
         itagCore = require('itags.core')(window),
         itagName = 'i-scroller', // <-- define your own itag-name here
         DOCUMENT = window.document,
@@ -142,35 +142,17 @@ console.warn('sync');
                 var element = this,
                     model = element.model,
                     items = model.items,
-                    itemsize = model['item-size'],
                     iscrollerHeight = element.height,
                     iscrollerTop = element.top,
                     scrollContainer = element.getData('_scrollContainer'),
-                    cssNode = element.getElement('>style', true),
                     startItem = model['start-item'],
                     start = model.horizontal ? 'left' : 'top',
                     dimension = model.horizontal ? 'width' : 'height',
-                    firstItemDrawn = element.getFirstItem(),
                     scrollContainerVChildNodes = scrollContainer.vnode.vChildNodes, isDragging,
-                    totalItemsSize, listsizeNumber, listsizeNumberString, listsizeUnit, firstIndex, j, k, len,
                     indentNode, indentNode2, height, shiftFromFirstRange, topNode, height2, scrolledPages, firstIsInside, lastIsInside,
                     beyondEdge, beyondEdgecount, node, shift, startItemFloor, dif, prevFirstIndex, prevLastIndex, count, noOverlap,
-                    totalItems, content, i, lastIndex, item, css;
+                    firstIndex, j, k, len, content, i, lastIndex, item, newHeight;
 
-                // start with the calculation of the current item-size in pixels: we need this
-
-                totalItems = element.getRenderedItems(firstItemDrawn);
-
-                listsizeNumber = parseInt(itemsize, 10);
-                listsizeNumberString = String(listsizeNumber);
-                listsizeUnit = itemsize.substr(listsizeNumberString.length);
-                totalItemsSize = totalItems * listsizeNumber;
-
-                css = 'i-scroller[i-id="'+element['i-id']+'"] span.item{'+(model.horizontal ? 'width' : 'height')+':'+itemsize+'}'+
-                      'i-scroller[i-id="'+element['i-id']+'"] span.item.shifted{'+(model.horizontal ? 'left' : 'top')+':'+totalItemsSize+listsizeUnit+'}';
-                cssNode.setText(css);
-
-                // building the content of the itag:
                 content = '';
 
                 // if container is empty: fill it as far as needed
@@ -219,6 +201,10 @@ console.warn('sync');
                         lastIndex -= firstIndex;
                         firstIndex = 0;
                     }
+console.warn('firstIndex '+firstIndex);
+console.warn('lastIndex '+lastIndex);
+console.warn('prevFirstIndex '+prevFirstIndex);
+console.warn('prevLastIndex '+prevLastIndex);
                     if ((firstIndex!==prevFirstIndex) || (lastIndex!==prevLastIndex)) {
                             height2 = 0;
                             firstIsInside = ((firstIndex>=prevFirstIndex) && (firstIndex<=prevLastIndex));
@@ -226,6 +212,7 @@ console.warn('sync');
                             noOverlap = !firstIsInside && !lastIsInside;
                             startItemFloor = Math.floor(startItem);
                             if (noOverlap) {
+console.warn('noOverlap');
                                 // completely refill
                                 for (i=firstIndex; i<=lastIndex; i++) {
                                     item = items[i];
@@ -241,6 +228,7 @@ console.warn('sync');
                                 // we start with the one item that we know that is already drawn and will redraw all others from that point.
                                 len = scrollContainerVChildNodes.length;
                                 if (firstIsInside) {
+console.warn('firstIsInside');
                                     // start with "firstIndex"
                                     // first we need to find it:
                                     for (i=0; i<len; i++) {
@@ -302,6 +290,7 @@ console.warn('sync');
                                     }
                                 }
                                 else if (lastIsInside) {
+console.warn('lastIsInside');
                                     // --going down--
                                     // start with "lastIndex"
                                     // first we need to find it:
@@ -314,7 +303,9 @@ console.warn('sync');
                                     // "i" has the index of the last item to draw
                                     // first, going down:
                                     k = lastIndex + 1;
+console.warn('lastIndex '+lastIndex);
                                     for (j=i; j>=0; j--) {
+console.warn('fase A');
                                         item = items[--k];
                                         node = scrollContainerVChildNodes[j].domNode;
                                         if (node.getData('_index')!==k) {
@@ -333,6 +324,7 @@ console.warn('sync');
                                     }
                                     // now we are starting from len-1 downto i:
                                     for (j=len-1; j>i; j--) {
+console.warn('fase B');
                                         item = items[--k];
                                         node = scrollContainerVChildNodes[j].domNode;
                                         if (node.getData('_index')!==k) {
@@ -353,14 +345,18 @@ console.warn('sync');
                                     scrolledPages = scrollContainer.getData('_scrolledPages') || 0;
                                     height = scrollContainer.height;
                                     if (len===i+2) {
+console.warn('fase C');
                                         scrolledPages--;
                                         scrollContainer.setData('_scrolledPages', scrolledPages);
                                     }
                                     if (indentNode) {
-                                        indentNode2 && indentNode2.setInlineStyle('margin-top', ((1+scrolledPages)*height)+'px');
+console.warn('fase D');
+                                        newHeight = ((1+scrolledPages)*height);
+                                        indentNode2 && indentNode2.setInlineStyle('margin-top', newHeight+'px');
                                         indentNode.setInlineStyle('margin-top', -height+'px');
                                     }
                                     else {
+console.warn('fase E');
                                         indentNode2 && indentNode2.setInlineStyle('margin-top', (scrolledPages*height)+'px');
                                     }
                                 }
@@ -389,18 +385,21 @@ console.warn('sync');
                     start = model.horizontal ? 'left' : 'top',
                     end = model.horizontal ? 'right' : 'bottom',
                     iscrollerStart = element[start],
+                    highestEnd = 99999,
                     vChildNodes = scrollContainer.vnode.vChildNodes,
                     len = vChildNodes.length,
-                    partial, i, firstVisibleNode, startItem, domNode, shift, height, scrolledPages;
+                    partial, i, firstVisibleNode, startItem, domNode, shift, height, scrolledPages, endPos;
                 // find the first childNode that lies within the visible area:
-                for (i=0; (i<len) && !firstVisibleNode; i++) {
+                for (i=0; (i<len); i++) {
                     domNode = vChildNodes[i].domNode;
-                    if (domNode[end]>iscrollerStart) {
+                    endPos = domNode[end];
+                    if ((domNode[start]<=iscrollerStart) && (endPos>iscrollerStart) && (endPos<highestEnd)) {
                         firstVisibleNode = domNode;
+                        highestEnd = endPos;
                     }
                 }
                 if (firstVisibleNode) {
-                    partial = (iscrollerStart-domNode[start])/domNode.height;
+                    partial = (iscrollerStart-firstVisibleNode[start])/domNode.height;
                     startItem = firstVisibleNode.getData('_index') + partial;
                 }
                 else {
@@ -425,52 +424,9 @@ console.warn('sync');
                         shift = parseInt(scrollContainer.getInlineStyle(start), 10) || 0;
                         shift += (height*scrolledPages);
                         scrollContainer.setInlineStyle(start, shift+'px');
+                        scrollContainer.removeData('_scrolledPages');
                     }
                 }
-            },
-
-            getRenderedItems: function(firstItemDrawn) {
-                var element = this,
-                    model = element.model,
-                    items = model.items,
-                    contSize = element[model.horizontal ? 'width' : 'height'] + 2*margeItems,
-                    count = Math.ceil(contSize/element.calculatedSize());
-                return Math.min(count, items.length-firstItemDrawn);
-                // return this.model.items.length;
-            },
-
-            getFirstItem: function() {
-                var element = this,
-                    model = element.model,
-                    scrollContainer = element.getData('_scrollContainer'),
-                    itemNodeSize = element.calculatedSize(),
-                    shiftedPixels;
-                shiftedPixels = Math.max(0, -parseInt(scrollContainer.getInlineStyle(model.horizontal ? 'left' : 'top') || 0, 10))-margeItems;
-                return (itemNodeSize===0) ? 0 : Math.max(0, Math.floor(shiftedPixels/itemNodeSize));
-            },
-
-            calculatedSize: function() {
-                var element = this,
-                    model = element.model,
-                    items = model.items,
-                    scrollContainer = element.getData('_scrollContainer'),
-                    firstItemNode, tempNode, itemNodeSize;
-                firstItemNode = scrollContainer.getElement('>span');
-                if (firstItemNode) {
-                    itemNodeSize = firstItemNode[model.horizontal ? 'width' : 'height'];
-                }
-                else {
-                    // draw dummyNode to calculate true size in pixels
-                    if (items.length>0) {
-                        tempNode = scrollContainer.append(element.drawItem(items[0], false, true));
-                        itemNodeSize = tempNode[model.horizontal ? 'width' : 'height'];
-                        tempNode.remove();
-                    }
-                    else {
-                        itemNodeSize = 0;
-                    }
-                }
-                return itemNodeSize;
             },
 
             drawItem: function(oneItem, shifted, hidden) {
