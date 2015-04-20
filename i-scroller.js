@@ -9,11 +9,37 @@ module.exports = function (window) {
         DOCUMENT = window.document,
         ITSA = window.ITSA,
         Event = ITSA.Event,
+        AUTO_EXPAND_DELAY = 2000,
         IParcel = require('i-parcel')(window),
         microtemplate = require('i-parcel/lib/microtemplate.js'),
-        Itag;
+        scrollers = [],
+        Itag, autoExpandScrollers, registerScroller, unregisterScroller;
 
     if (!window.ITAGS[itagName]) {
+
+        registerScroller = function(iscroller) {
+            scrollers.push(iscroller);
+        };
+
+        unregisterScroller = function(iscroller) {
+            scrollers.remove(iscroller);
+        };
+
+        autoExpandScrollers = function() {
+            ITSA.later(function() {
+                var len = scrollers.length,
+                    i;
+                for (i=0; i<len; i++) {
+// expand has currently errors, when not expanding, but scrolled --> afterwards
+// the scrollerContainer is shifted out of view
+// THEREFORE comment `autoExpand()` for now:
+
+                    // scrollers[i].autoExpand();
+
+                }
+            }, AUTO_EXPAND_DELAY, true);
+        };
+
         Event.after('dd', function(e) {
             // start dragging
             var node = e.target,
@@ -188,9 +214,9 @@ module.exports = function (window) {
                 // define unique id:
                 element['i-id'] = ITSA.idGenerator('i-scroller');
 
-
-                // ITSA.later(function() {element.autoExpand();}, 100, true);
-
+                element.itagReady().then(function() {
+                    registerScroller(element);
+                });
             },
 
            /**
@@ -480,24 +506,29 @@ module.exports = function (window) {
                     size = horizontal ? 'width' : 'height',
                     maxIndex = items.length-1,
                     isDragging = element.hasData('_dragging'),
-                    item, index, firstChildNode, startShift, lowerShiftNode, lowerShift, size1;
+                    item, index, firstChildNode, startShift, lowerShiftNode, lowerShift, size1, lowerNodeAtPosZero;
                 if (!isDragging && (count>0)) {
                     firstChildNode = scrollContainerVChildNodes[0].domNode;
                     startShift = parseInt(firstChildNode.getInlineStyle('margin-'+start), 10);
                     lowerShiftNode = scrollContainer.getData('_lowerShiftNode');
                     lowerShiftNode && (lowerShift=parseInt(lowerShiftNode.getInlineStyle('margin-'+start), 10));
                     index = lowerNode.getData('_index');
+                    lowerNodeAtPosZero = (lowerNode===firstChildNode);
                     while ((lowerNode[start]<element[end]) && (++index<=maxIndex)) {
                         item = items[index];
-                        lowerNode = scrollContainer.append(element.drawItem(item, index), false, lowerNode);
+                        lowerNode = scrollContainer.append(element.drawItem(item, index), false, !lowerNodeAtPosZero ? lowerNode : null);
                         lowerNode.setData('_index', index);
+                        scrollContainer.setData('_lastIndex', index);
                         scrollContainer.setData('_lowerNode', lowerNode);
                         size1 = lowerNode[size];
                         startShift += size1;
-                        // firstChildNode.setInlineStyle('margin-'+start, startShift+'px');
                         if (lowerShiftNode) {
                             lowerShift -= size1;
                             lowerShiftNode.setInlineStyle('margin-'+start, lowerShift+'px');
+                            firstChildNode.setInlineStyle('margin-'+start, startShift+'px');
+                            startShift = parseInt(scrollContainer.getInlineStyle(start), 10);
+                            startShift -= size1;
+                            scrollContainer.setInlineStyle(start, startShift+'px');
                         }
                     }
                 }
@@ -582,10 +613,12 @@ module.exports = function (window) {
             },
 
             destroy: function() {
+                unregisterScroller(this);
             }
         });
 
         itagCore.setLazyBinding(Itag, true);
+        autoExpandScrollers();
         window.ITAGS[itagName] = Itag;
     }
 

@@ -70,10 +70,6 @@ i-scroller span.item {
     overflow: hidden;
 }
 
-i-scroller span.item.shifted {
-    color: #F00;
-}
-
 i-scroller span.item.empty {
     opacity: 0;
 }
