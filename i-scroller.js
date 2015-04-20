@@ -17,13 +17,36 @@ module.exports = function (window) {
         Event.after('dd', function(e) {
             // start dragging
             var node = e.target,
+                sourceNode = e.sourceTarget,
                 iscroller = node.getParent(),
                 dragPromise = e.dd;
             // store initial start-item:
             iscroller.setData('_scrollBefore', iscroller.model['start-item']);
-            iscroller.setData('_dragging', true);
+        //            iscroller.setData('_dragging', true);
             dragPromise.finally(function() {
                 iscroller.redefineStartItem(true);
+                if (!iscroller.getData('_dragging')) {
+                    var index;
+                    sourceNode.matches('span.item') ||  (sourceNode=sourceNode.inside('span.item'));
+                    index = sourceNode.getData('_index');
+                    /**
+                    * Emitted when a the i-select changes its value
+                    *
+                    * @event i-select:valuechange
+                    * @param e {Object} eventobject including:
+                    * @param e.target {HtmlElement} the i-select element
+                    * @param e.prevValue {Number} the selected item, starting with 1
+                    * @param e.newValue {Number} the selected item, starting with 1
+                    * @param e.buttonText {String} the text that will appear on the button
+                    * @param e.listText {String} the text as it is in the list
+                    * @since 0.1
+                    */
+                    iscroller.emit('selected', {
+                        newValue: sourceNode,
+                        index: index,
+                        item: iscroller.model.items[index]
+                    });
+                }
                 iscroller.removeData('_dragging');
             });
         }, 'i-scroller >span');
@@ -77,8 +100,7 @@ module.exports = function (window) {
                 horizontal = model.horizontal,
                 end = horizontal ? 'right' : 'bottom',
                 start = horizontal ? 'left' : 'top',
-                up, clientX, clientY, boundaryNode, difference, value;
-
+                up, clientX, clientY, boundaryNode, difference, value, isDragging;
             if (typeof e.center==='object') {
                 clientX = e.center.x;
                 clientY = e.center.y;
@@ -86,6 +108,13 @@ module.exports = function (window) {
             else {
                 clientX = e.clientX;
                 clientY = e.clientY;
+            }
+            isDragging = iscroller.getData('_dragging');
+            if (!isDragging) {
+                difference = Math.abs(horizontal ? (e.clientX-e.xMouse) : (e.clientY-e.yMouse));
+                if (difference>=2) {
+                    iscroller.setData('_dragging', true);
+                }
             }
             up = horizontal ? (e.clientX>e.xMouse) : (e.clientY>e.yMouse);
             if (up) {
@@ -96,17 +125,19 @@ module.exports = function (window) {
             }
             else {
                 boundaryNode = scrollContainer.getData('_upperNode');
-console.warn('boundaryNode '+boundaryNode.getOuterHTML());
                 if (boundaryNode.getData('_index')===0) {
-                    difference = boundaryNode[start]-iscroller[start];
+                    difference = iscroller[start]-boundaryNode[start];
                 }
             }
             if (difference<0) {
-console.warn('difference '+difference);
                 value = parseInt(scrollContainer.getInlineStyle(start), 10);
-                value -= difference;
+                if (up) {
+                    value += difference;
+                }
+                else {
+                    value -= difference;
+                }
                 scrollContainer.setInlineStyle(start, value+'px');
-console.warn(scrollContainer.getOuterHTML());
             }
             iscroller.redefineStartItem();
         }, 'i-scroller >span');
@@ -404,19 +435,16 @@ console.warn(scrollContainer.getOuterHTML());
                                     scrolledPages = scrollContainer.getData('_scrolledPages') || 0;
                                     size1 = scrollContainer[size];
                                     scrollContainer.setData('_contSize', size1);
-                                    if (indentNode) {
-                                        if (decreaseScrollPages) {
-                                                            scrolledPages--;
-                                                            scrollContainer.setData('_scrolledPages', scrolledPages);
-                                        }
-                                        newHeight = ((1+scrolledPages)*size1);
-                                        indentNode2 && indentNode2.setInlineStyle('margin-'+start, newHeight+'px');
-                                        decreaseScrollPages || indentNode.setInlineStyle('margin-'+start, -size1+'px');
-                                        scrollContainer.setData('_lowerShiftNode', indentNode);
-                                    }
-                                    else {
+                                    if (decreaseScrollPages) {
+                                        scrolledPages--;
+                                        scrollContainer.setData('_scrolledPages', scrolledPages);
                                         scrollContainer.removeData('_lowerShiftNode');
-                                        indentNode2 && indentNode2.setInlineStyle('margin-'+start, (scrolledPages*size1)+'px');
+                                    }
+                                    newHeight = ((1+scrolledPages)*size1);
+                                    indentNode2 && indentNode2.setInlineStyle('margin-'+start, newHeight+'px');
+                                    if (!decreaseScrollPages) {
+                                        indentNode.setInlineStyle('margin-'+start, -size1+'px');
+                                        scrollContainer.setData('_lowerShiftNode', indentNode);
                                     }
                                     scrollContainer.setData('_upperNode', node);
                                 }
@@ -508,7 +536,7 @@ console.warn(scrollContainer.getOuterHTML());
                 }
                 foundNode = firstVisibleNode || firstVisibleNodeNotFound;
                 if (foundNode) {
-                    partial = (iscrollerStart-foundNode[start])/domNode[size];
+                    partial = (iscrollerStart-foundNode[start])/foundNode[size];
                     startItem = foundNode.getData('_index') + partial;
                 }
                 else {
