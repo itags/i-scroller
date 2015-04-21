@@ -75,7 +75,7 @@ module.exports = function (window) {
                 }
                 iscroller.removeData('_dragging');
             });
-        }, 'i-scroller >span');
+        }, 'i-scroller >span, i-table >span');
 
         Event.before('dd-drag', function(e) {
             var node = e.target,
@@ -114,7 +114,7 @@ module.exports = function (window) {
                     }
                 }
             }
-        }, 'i-scroller >span');
+        }, 'i-scroller >span, i-table >span');
 
         // also: correction if dragging was too heavy and it bounced through the limit:
         Event.after('dd-drag', function(e) {
@@ -166,7 +166,7 @@ module.exports = function (window) {
                 scrollContainer.setInlineStyle(start, value+'px');
             }
             iscroller.redefineStartItem();
-        }, 'i-scroller >span');
+        }, 'i-scroller >span, i-table >span');
 
         Itag = IParcel.subClass(itagName, {
             /*
@@ -219,6 +219,8 @@ module.exports = function (window) {
                 });
             },
 
+            contTag: 'span',
+
            /**
             * Redefines the childNodes of both the vnode as well as its related dom-node. The new
             * definition replaces any previous nodes. (without touching unmodified nodes).
@@ -231,17 +233,15 @@ module.exports = function (window) {
             */
             render: function() {
                 var element = this,
-                    css = '<style type="text/css"></style>',
-                    content = '<span plugin-dd="true" dd-direction="y"></span>';
+                    containerTag = element.contTag,
+                    content = '<'+containerTag+' plugin-dd="true" dd-direction="y"></'+containerTag+'>';
                 // mark element its i-id:
                 element.setAttr('i-id', element['i-id']);
 
-                // set element css:
-                element.addSystemElement(css, false, true);
                 // set the content:
                 element.setHTML(content);
                 // for quick access to the scrollcontainer, we add it as data:
-                element.setData('_scrollContainer', element.getElement('>span'));
+                element.setData('_scrollContainer', element.getElement('>'+containerTag));
 
             },
 
@@ -593,7 +593,7 @@ module.exports = function (window) {
                     model = element.model,
                     template = model.template,
                     odd = ((index%2)!==0),
-                    itemContent = '<span class="item'+(odd ? ' odd' : '')+'">';
+                    itemContent = '<span class="item'+(odd ? ' odd' : ' even')+'">';
                 if (typeof oneItem==='string') {
                     itemContent += oneItem;
                 }
