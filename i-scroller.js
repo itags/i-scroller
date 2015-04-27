@@ -67,7 +67,7 @@ module.exports = function (window) {
                     * @param e.listText {String} the text as it is in the list
                     * @since 0.1
                     */
-                    iscroller.emit('selected', {
+                    iscroller.emit('UI:selected', {
                         newValue: sourceNode,
                         index: index,
                         item: iscroller.model.items[index]
@@ -196,7 +196,6 @@ module.exports = function (window) {
                     value = model.value || -1,
                     itemsize = model['item-size'] || '2em',
                     startItem = model['start-item'] || 0;
-
                 element.defineWhenUndefined('value', value)
                        .defineWhenUndefined('item-size', itemsize)
                        .defineWhenUndefined('start-item', startItem)
@@ -269,6 +268,11 @@ module.exports = function (window) {
                     lastIndex = items.length-1;
                     beyondEdgecount = 0;
                     startItemFloor = Math.floor(startItem);
+console.warn('build first time');
+console.warn('startItem '+startItem);
+console.warn('margeItems '+margeItems);
+console.warn('firstIndex '+firstIndex);
+console.warn('lastIndex '+lastIndex);
                     for (i=firstIndex; (i<=lastIndex) && (beyondEdgecount<(2*margeItems)); i++) {
                         item = items[i];
                         node = scrollContainer.append(element.drawItem(item, i));
@@ -310,6 +314,8 @@ module.exports = function (window) {
                         lastIndex -= firstIndex;
                         firstIndex = 0;
                     }
+console.warn('firstIndex '+firstIndex);
+console.warn('lastIndex '+lastIndex);
                     if (!isDragging || ((firstIndex!==prevFirstIndex) || (lastIndex!==prevLastIndex))) {
                             size2 = 0;
                             firstIsInside = ((firstIndex>=prevFirstIndex) && (firstIndex<=prevLastIndex));
@@ -317,6 +323,7 @@ module.exports = function (window) {
                             noOverlap = !firstIsInside && !lastIsInside;
                             startItemFloor = Math.floor(startItem);
                             if (noOverlap) {
+console.warn('noOverlap');
                                 // completely refill
                                 for (i=firstIndex; i<lastIndex; i++) {
                                     item = items[i];
@@ -330,6 +337,7 @@ module.exports = function (window) {
                                 scrollContainer.setData('_lowerNode', node);
                             }
                             else {
+console.warn('firstIsInside '+firstIsInside);
                                 // the list is broken into 2 area's
                                 // the division is at item "firstIndex", which IS NOT the first childNode!
                                 // we start with the one item that we know that is already drawn and will redraw all others from that point.
@@ -347,6 +355,7 @@ module.exports = function (window) {
                                     // first, going up:
                                     k = firstIndex - 1;
                                     for (j=i; j<len; j++) {
+console.warn('fase 1');
                                         item = items[++k];
                                         node = scrollContainerVChildNodes[j].domNode;
                                         if (node.getData('_index')!==k) {
@@ -366,6 +375,7 @@ module.exports = function (window) {
                                     }
                                     // now we are starting from 0 to i:
                                     for (j=0; j<i; j++) {
+console.warn('fase 2');
                                         item = items[++k];
                                         node = scrollContainerVChildNodes[j].domNode;
                                         if (node.getData('_index')!==k) {
@@ -389,11 +399,13 @@ module.exports = function (window) {
                                     size1 = scrollContainer[size];
                                     scrollContainer.setData('_contSize', size1);
                                     if (indentNode2) {
+console.warn('setting fase 1 --> '+((1+scrolledPages)*size1));
                                         indentNode && indentNode.setInlineStyle('margin-'+start, -size1+'px');
                                         indentNode2.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
                                         scrollContainer.setData('_lowerShiftNode', indentNode);
                                     }
                                     else {
+console.warn('setting fase 2 --> '+((1+scrolledPages)*size1));
                                         node = scrollContainerVChildNodes[i].domNode;
                                         node.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
                                         scrolledPages++;
@@ -573,7 +585,9 @@ module.exports = function (window) {
                 else {
                     startItem = 0;
                 }
+console.warn('setting startitem to: '+startItem);
                 model['start-item'] = startItem;
+resetContainer = false;
                 if (resetContainer) {
                     scrolledPages = scrollContainer.getData('_scrolledPages');
                     if (scrolledPages) {
