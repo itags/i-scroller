@@ -45,6 +45,8 @@ i-scroller {
 }
 
 i-scroller >span,
+i-scroller >span >section,
+i-scroller >span >section >section,
 i-scroller span.item {
     -webkit-box-sizing: border-box;
     -moz-box-sizing: border-box;
@@ -62,12 +64,18 @@ i-scroller[horizontal="true"] >span {
     height: 100%;
 }
 
-i-scroller span.item {
+i-scroller >span >section {
     display: block;
     position: relative;
     width: 100%;
     height: 100%;
+    min-height: 1em;
     overflow: hidden;
+}
+
+i-scroller >span >section >section {
+    display: block;
+    width: 100%;
 }
 
 i-scroller span.item.empty {

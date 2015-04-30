@@ -3,7 +3,7 @@ module.exports = function (window) {
 
     require('./css/i-scroller.css'); // <-- define your own itag-name here
 
-    var margeItems = 1,
+    var margeItems = 2,
         itagCore = require('itags.core')(window),
         itagName = 'i-scroller', // <-- define your own itag-name here
         DOCUMENT = window.document,
@@ -51,28 +51,32 @@ module.exports = function (window) {
         //            iscroller.setData('_dragging', true);
             dragPromise.finally(function() {
                 iscroller.redefineStartItem(true);
-                if (!iscroller.getData('_dragging')) {
-                    var index;
-                    sourceNode.matches('span.item') ||  (sourceNode=sourceNode.inside('span.item'));
-                    index = sourceNode.getData('_index');
-                    /**
-                    * Emitted when a the i-select changes its value
-                    *
-                    * @event i-select:valuechange
-                    * @param e {Object} eventobject including:
-                    * @param e.target {HtmlElement} the i-select element
-                    * @param e.prevValue {Number} the selected item, starting with 1
-                    * @param e.newValue {Number} the selected item, starting with 1
-                    * @param e.buttonText {String} the text that will appear on the button
-                    * @param e.listText {String} the text as it is in the list
-                    * @since 0.1
-                    */
-                    iscroller.emit('UI:selected', {
-                        newValue: sourceNode,
-                        index: index,
-                        item: iscroller.model.items[index]
-                    });
-                }
+
+
+                // if (!iscroller.getData('_dragging')) {
+                //     var index;
+                //     sourceNode.matches('span.item') ||  (sourceNode=sourceNode.inside('span.item'));
+                //     index = sourceNode.getData('_index');
+                //     *
+                //     * Emitted when a the i-select changes its value
+                //     *
+                //     * @event i-select:valuechange
+                //     * @param e {Object} eventobject including:
+                //     * @param e.target {HtmlElement} the i-select element
+                //     * @param e.prevValue {Number} the selected item, starting with 1
+                //     * @param e.newValue {Number} the selected item, starting with 1
+                //     * @param e.buttonText {String} the text that will appear on the button
+                //     * @param e.listText {String} the text as it is in the list
+                //     * @since 0.1
+
+                //     iscroller.emit('UI:selected', {
+                //         newValue: sourceNode,
+                //         index: index,
+                //         item: iscroller.model.items[index]
+                //     });
+                // }
+
+
                 iscroller.removeData('_dragging');
             });
         }, 'i-scroller >span, i-table >span');
@@ -186,7 +190,9 @@ module.exports = function (window) {
                 value: 'string',
                 multiple: 'boolean',
                 'i-prop': 'string',
-                'reset-value': 'string'
+                'reset-value': 'string',
+                'uri-property': 'string', // model's property that holds the uri --> if present, then an anchor-element is rendered
+                'fixed-headers': 'string' // whether to fix the headers during scrolling. The headers should be defined by the template
             },
 
             init: function() {
@@ -245,6 +251,264 @@ module.exports = function (window) {
             },
 
             sync: function() {
+console.warn('SYNC');
+                var element = this,
+                    model = element.model,
+                    items = model.items,
+                    horizontal = model.horizontal,
+                    size = horizontal ? 'width' : 'height',
+                    start = horizontal ? 'left' : 'top',
+                    iscrollerSize = element[size],
+                    iscrollerStart = element[start],
+                    scrollContainer = element.getData('_scrollContainer'),
+                    startItem = model['start-item'],
+                    scrollContainerVChildNodes = scrollContainer.vnode.vChildNodes,
+                    indentNode, indentNode2, size1, shiftFromFirstRange, topNode, size2, scrolledPages, firstIsInside, lastIsInside,
+                    beyondEdge, beyondEdgecount, node, shift, startItemFloor, dif, prevFirstIndex, prevLastIndex, count, noOverlap,
+                    firstIndex, j, k, len, content, i, lastIndex, item, newHeight, isDragging, decreaseScrollPages, lowerNode, prevItem;
+
+                content = '';
+
+                // if container is empty: fill it as far as needed
+                firstIndex = Math.max(0, Math.round((startItem - margeItems)));
+                if (scrollContainer.isEmpty()) {
+                    lastIndex = items.length-1;
+                    beyondEdgecount = 0;
+                    startItemFloor = Math.floor(startItem);
+                    for (i=firstIndex; (i<=lastIndex) && (beyondEdgecount<(2*margeItems)); i++) {
+                        item = items[i];
+                        prevItem = items[i-1];
+                        node = scrollContainer.append(element.drawItem(item, prevItem, i));
+                        node.setData('_index', i);
+                        (i===firstIndex) && scrollContainer.setData('_upperNode', node);
+                        if (i===startItemFloor) {
+                            shift = node[start];
+                            dif = (startItem-startItemFloor);
+                            if (dif>0) {
+                                shift += dif*node[size];
+                            }
+                        }
+                        if (!beyondEdge) {
+                            (scrollContainer[size]>iscrollerSize) && (beyondEdge=true);
+                        }
+                        else {
+                            beyondEdgecount++;
+                        }
+                    }
+                    if (shift) {
+                        scrollContainer.setInlineStyle(start, (iscrollerStart-shift)+'px');
+                    }
+                    // now store the lowest and highest index that was drawn:
+                    // we need it when updating:
+                    scrollContainer.setData('_firstIndex', firstIndex);
+                    scrollContainer.setData('_lastIndex', i-1);
+                    scrollContainer.setData('_lowerNode', node);
+                }
+                // else, update content
+                else {
+                    isDragging = element.hasData('_dragging');
+                    // figure out if the new range has items that are already drawn:
+                    prevFirstIndex = scrollContainer.getData('_firstIndex');
+                    prevLastIndex = scrollContainer.getData('_lastIndex');
+                    count = scrollContainerVChildNodes.length;
+                    lastIndex = firstIndex + count - 1;
+                    if (!isDragging || ((firstIndex!==prevFirstIndex) || (lastIndex!==prevLastIndex))) {
+                            size2 = 0;
+                            firstIsInside = ((firstIndex>=prevFirstIndex) && (firstIndex<=prevLastIndex));
+                            lastIsInside = ((lastIndex>=prevFirstIndex) && (lastIndex<=prevLastIndex));
+                            noOverlap = !firstIsInside && !lastIsInside;
+                            startItemFloor = Math.floor(startItem);
+console.warn('firstIndex '+prevFirstIndex+' --> '+firstIndex);
+console.warn('lastIndex '+prevLastIndex+' --> '+lastIndex);
+console.warn('startItem '+startItem+' ('+startItemFloor+')');
+                            if (noOverlap) {
+console.warn('no overlap');
+                                // completely refill
+                                for (i=firstIndex; i<=lastIndex; i++) {
+                                    item = items[i];
+                                    prevItem = items[i-1];
+                                    node = scrollContainerVChildNodes[i-firstIndex].domNode.replace(element.drawItem(item, prevItem, i));
+                                    node.setData('_index', i);
+                                    (i===firstIndex) && scrollContainer.setData('_upperNode', node);
+                                    (i===startItemFloor) && (topNode=node);
+                                    node.removeInlineStyle('margin-'+start);
+                                }
+                                scrollContainer.removeData('_lowerShiftNode');
+                                scrollContainer.setData('_lowerNode', node);
+                            }
+                            else {
+                                // the list is broken into 2 area's
+                                // the division is at item "firstIndex", which IS NOT the first childNode!
+                                // we start with the one item that we know that is already drawn and will redraw all others from that point.
+                                len = scrollContainerVChildNodes.length;
+                                if (firstIsInside) {
+                                    // start with "firstIndex"
+                                    // first we need to find it:
+                                    for (i=0; i<len; i++) {
+                                        node = scrollContainerVChildNodes[i].domNode;
+                                        if (node.getData('_index')===firstIndex) {
+                                            break;
+                                        }
+                                    }
+                                    // "i" has the index of the first item to draw
+                                    // first, going up:
+                                    k = firstIndex - 1;
+                                    for (j=i; j<len; j++) {
+                                        prevItem = items[k];
+                                        item = items[++k];
+                                        node = scrollContainerVChildNodes[j].domNode;
+                                        if (node.getData('_index')!==k) {
+                                            if (item) {
+                                                node = node.replace(element.drawItem(item, prevItem, k));
+                                                lowerNode = node;
+                                            }
+                                            else {
+                                                node.empty();
+                                                node.setClass('empty');
+                                            }
+                                            node.setData('_index', k);
+                                        }
+                                        node.removeInlineStyle('margin-'+start);
+                                        (k===startItemFloor) && (topNode=node);
+                                        (j===i) && (indentNode=node);
+                                    }
+                                    // now we are starting from 0 to i:
+                                    for (j=0; j<i; j++) {
+                                        prevItem = items[k];
+                                        item = items[++k];
+                                        node = scrollContainerVChildNodes[j].domNode;
+                                        if (node.getData('_index')!==k) {
+                                            if (item) {
+                                                node = node.replace(element.drawItem(item, prevItem, k));
+                                                lowerNode = node;
+                                            }
+                                            else {
+                                                node.empty();
+                                                node.setClass('empty');
+                                            }
+                                            node.setData('_index', k);
+                                        }
+                                        node.removeInlineStyle('margin-'+start);
+                                        size2 += node[size];
+                                        (k===startItemFloor) && (topNode=node);
+                                        (j===0) && (indentNode2=node);
+                                    }
+                                    scrollContainer.setData('_lowerNode', lowerNode);
+                                    scrolledPages = scrollContainer.getData('_scrolledPages') || 0;
+                                    size1 = scrollContainer[size];
+                                    scrollContainer.setData('_contSize', size1);
+                                    if (indentNode2) {
+                                        indentNode && indentNode.setInlineStyle('margin-'+start, -size1+'px');
+                                        indentNode2.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
+                                        scrollContainer.setData('_lowerShiftNode', indentNode);
+                                    }
+                                    else {
+                                        node = scrollContainerVChildNodes[i].domNode;
+                                        node.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
+                                        scrolledPages++;
+                                        scrollContainer.setData('_scrolledPages', scrolledPages);
+                                        scrollContainer.removeData('_lowerShiftNode');
+                                    }
+                                    scrollContainer.setData('_upperNode', indentNode);
+                                }
+                                else {
+console.warn('first not inside');
+                                    // --going down--
+                                    // start with "lastIndex"
+                                    // first we need to find it:
+                                    for (i=0; i<len; i++) {
+                                        node = scrollContainerVChildNodes[i].domNode;
+                                        if (node.getData('_index')===lastIndex) {
+                                            break;
+                                        }
+                                    }
+                                    // "i" has the index of the last item to draw
+                                    // first, going down:
+                                    k = lastIndex + 1;
+                                    for (j=i; j>=0; j--) {
+console.warn('fase A');
+                                        item = items[--k];
+                                        prevItem = items[k-1];
+                                        node = scrollContainerVChildNodes[j].domNode;
+                                        if (node.getData('_index')!==k) {
+                                            if (item) {
+                                                node = node.replace(element.drawItem(item, prevItem, k));
+                                            }
+                                            else {
+                                                node.empty();
+                                                node.setClass('empty');
+                                            }
+                                            node.setData('_index', k);
+                                        }
+                                        node.removeInlineStyle('margin-'+start);
+                                        (k===startItemFloor) && (topNode=node);
+                                        (j===0) && (indentNode2=node);
+                                        if (j===i) {
+                                            scrollContainer.setData('_lowerNode', node);
+                                        }
+                                    }
+                                    // now we are starting from len-1 downto i:
+                                    for (j=len-1; j>i; j--) {
+console.warn('fase B');
+                                        item = items[--k];
+                                        prevItem = items[k-1];
+                                        node = scrollContainerVChildNodes[j].domNode;
+                                        if (node.getData('_index')!==k) {
+                                            if (item) {
+                                                node = node.replace(element.drawItem(item, prevItem, k));
+                                            }
+                                            else {
+                                                node.empty();
+                                                node.setClass('empty');
+                                            }
+                                            node.setData('_index', k);
+                                        }
+                                        node.removeInlineStyle('margin-'+start);
+                                        size2 += node[size];
+                                        (k===startItemFloor) && (topNode=node);
+                                        (j===(i+1)) && (indentNode=node);
+                                    }
+                                    scrolledPages = scrollContainer.getData('_scrolledPages') || 0;
+                                    size1 = scrollContainer[size];
+                                    scrollContainer.setData('_contSize', size1);
+                                    if (!indentNode) {
+                                        scrolledPages--;
+                                        scrollContainer.setData('_scrolledPages', scrolledPages);
+                                        scrollContainer.removeData('_lowerShiftNode');
+                                    }
+                            newHeight = (scrolledPages*size1);
+                                    // newHeight = ((1+scrolledPages)*size1);
+                                    indentNode2 && indentNode2.setInlineStyle('margin-'+start, newHeight+'px');
+if (indentNode2) {
+    console.warn('MARGIN-TOP '+indentNode2.getOuterHTML()+' --> '+newHeight+'px');
+}
+                                if (indentNode) {
+                                    // if (!decreaseScrollPages) {
+console.warn('MARGIN-TOP '+indentNode.getOuterHTML()+' --> '+(-size1)+'px');
+                                        indentNode.setInlineStyle('margin-'+start, -size1+'px');
+                                        scrollContainer.setData('_lowerShiftNode', indentNode);
+                                    }
+                                    scrollContainer.setData('_upperNode', node);
+                                }
+                            }
+                            if (topNode && !isDragging) {
+                                shift = topNode[start];
+                                dif = (startItem-startItemFloor);
+                                if (dif>0) {
+                                    shift += dif*topNode[size];
+                                }
+                                if (shiftFromFirstRange) {
+                                    shift -= scrollContainer[size]-size2;
+                                }
+                                scrollContainer.setInlineStyle(start, (scrollContainer[start]-shift)+'px');
+                            }
+                            scrollContainer.setData('_firstIndex', firstIndex);
+                            scrollContainer.setData('_lastIndex', lastIndex);
+                    }
+                }
+            },
+
+            xsync: function() {
                 var element = this,
                     model = element.model,
                     items = model.items,
@@ -264,15 +528,10 @@ module.exports = function (window) {
 
                 // if container is empty: fill it as far as needed
                 if (scrollContainer.isEmpty()) {
-                    firstIndex = Math.max(0, Math.floor((startItem - margeItems)));
+                    firstIndex = Math.max(0, Math.round((startItem - margeItems)));
                     lastIndex = items.length-1;
                     beyondEdgecount = 0;
                     startItemFloor = Math.floor(startItem);
-console.warn('build first time');
-console.warn('startItem '+startItem);
-console.warn('margeItems '+margeItems);
-console.warn('firstIndex '+firstIndex);
-console.warn('lastIndex '+lastIndex);
                     for (i=firstIndex; (i<=lastIndex) && (beyondEdgecount<(2*margeItems)); i++) {
                         item = items[i];
                         node = scrollContainer.append(element.drawItem(item, i));
@@ -308,14 +567,12 @@ console.warn('lastIndex '+lastIndex);
                     prevFirstIndex = scrollContainer.getData('_firstIndex');
                     prevLastIndex = scrollContainer.getData('_lastIndex');
                     count = scrollContainerVChildNodes.length;
-                    firstIndex = Math.floor(startItem - margeItems);
+                    firstIndex = Math.round(startItem - margeItems);
                     lastIndex = firstIndex + count;
                     if (firstIndex<0) {
                         lastIndex -= firstIndex;
                         firstIndex = 0;
                     }
-console.warn('firstIndex '+firstIndex);
-console.warn('lastIndex '+lastIndex);
                     if (!isDragging || ((firstIndex!==prevFirstIndex) || (lastIndex!==prevLastIndex))) {
                             size2 = 0;
                             firstIsInside = ((firstIndex>=prevFirstIndex) && (firstIndex<=prevLastIndex));
@@ -323,7 +580,6 @@ console.warn('lastIndex '+lastIndex);
                             noOverlap = !firstIsInside && !lastIsInside;
                             startItemFloor = Math.floor(startItem);
                             if (noOverlap) {
-console.warn('noOverlap');
                                 // completely refill
                                 for (i=firstIndex; i<lastIndex; i++) {
                                     item = items[i];
@@ -337,7 +593,6 @@ console.warn('noOverlap');
                                 scrollContainer.setData('_lowerNode', node);
                             }
                             else {
-console.warn('firstIsInside '+firstIsInside);
                                 // the list is broken into 2 area's
                                 // the division is at item "firstIndex", which IS NOT the first childNode!
                                 // we start with the one item that we know that is already drawn and will redraw all others from that point.
@@ -355,7 +610,6 @@ console.warn('firstIsInside '+firstIsInside);
                                     // first, going up:
                                     k = firstIndex - 1;
                                     for (j=i; j<len; j++) {
-console.warn('fase 1');
                                         item = items[++k];
                                         node = scrollContainerVChildNodes[j].domNode;
                                         if (node.getData('_index')!==k) {
@@ -375,7 +629,6 @@ console.warn('fase 1');
                                     }
                                     // now we are starting from 0 to i:
                                     for (j=0; j<i; j++) {
-console.warn('fase 2');
                                         item = items[++k];
                                         node = scrollContainerVChildNodes[j].domNode;
                                         if (node.getData('_index')!==k) {
@@ -399,13 +652,11 @@ console.warn('fase 2');
                                     size1 = scrollContainer[size];
                                     scrollContainer.setData('_contSize', size1);
                                     if (indentNode2) {
-console.warn('setting fase 1 --> '+((1+scrolledPages)*size1));
                                         indentNode && indentNode.setInlineStyle('margin-'+start, -size1+'px');
                                         indentNode2.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
                                         scrollContainer.setData('_lowerShiftNode', indentNode);
                                     }
                                     else {
-console.warn('setting fase 2 --> '+((1+scrolledPages)*size1));
                                         node = scrollContainerVChildNodes[i].domNode;
                                         node.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
                                         scrolledPages++;
@@ -547,6 +798,7 @@ console.warn('setting fase 2 --> '+((1+scrolledPages)*size1));
             },
 
             redefineStartItem: function(resetContainer) {
+console.warn('REDEFINE STARTITEM');
                 var element = this,
                     model = element.model,
                     horizontal = model.horizontal,
@@ -554,7 +806,8 @@ console.warn('setting fase 2 --> '+((1+scrolledPages)*size1));
                     start = horizontal ? 'left' : 'top',
                     end = horizontal ? 'right' : 'bottom',
                     size = horizontal ? 'width' : 'height',
-                    iscrollerStart = element[start],
+                    borderStart = element.getStyle('border-'+start+'width'),
+                    iscrollerStart = element[start] + (parseInt(borderStart, 10) || 0),
                     highestEnd = 99999,
                     highestEndNotFound = highestEnd,
                     vChildNodes = scrollContainer.vnode.vChildNodes,
@@ -577,15 +830,20 @@ console.warn('setting fase 2 --> '+((1+scrolledPages)*size1));
                         }
                     }
                 }
+console.warn('scrollContainer.top '+scrollContainer.top);
                 foundNode = firstVisibleNode || firstVisibleNodeNotFound;
                 if (foundNode) {
                     partial = (iscrollerStart-foundNode[start])/foundNode[size];
                     startItem = foundNode.getData('_index') + partial;
+if (!firstVisibleNode) {
+    console.warn('OOPS: firstVisibleNode not Found: will take '+firstVisibleNodeNotFound.getOuterHTML());
+}
+console.warn('setting startitem to: '+foundNode.getData('_index')+'+'+partial+' = '+startItem);
                 }
                 else {
+console.warn('setting startitem to: 0 (reset)');
                     startItem = 0;
                 }
-console.warn('setting startitem to: '+startItem);
                 model['start-item'] = startItem;
 resetContainer = false;
                 if (resetContainer) {
@@ -598,16 +856,45 @@ resetContainer = false;
                         value = parseInt(firstNode.getInlineStyle('margin-'+start), 10) || 0;
                         firstNode.setInlineStyle('margin-'+start, (value-(scrolledPages*contHeight))+'px');
                     }
-                    scrollContainer.removeData('_scrolledPages');
+                    // scrollContainer.removeData('_scrolledPages');
+                    scrollContainer.setData('_scrolledPages', -1);
                 }
             },
 
-            drawItem: function(oneItem, index) {
+            drawItem: function(oneItem, prevItem, index) {
                 var element = this,
                     model = element.model,
                     template = model.template,
+                    headers = model.headers,
+                    uriProperty = model['uri-property'],
                     odd = ((index%2)!==0),
-                    itemContent = '<span class="item'+(odd ? ' odd' : ' even')+'">';
+                    itemContent = '<section>',
+                    len, i, header, headerContent, prevHeaderContent;
+
+                if (headers) {
+                    len = headers.length;
+                    for (i=0; i<len; i++) {
+                        header = headers[i];
+                        // only process if item is an object
+                        if (typeof oneItem!=='string') {
+                            if (header.indexOf('<%')!==-1) {
+                                headerContent = microtemplate(header, oneItem);
+                            }
+                            else {
+                                headerContent += header.substitute(oneItem);
+                            }
+                            oneItem.setData('_header'+i, headerContent);
+                            prevHeaderContent = prevItem && prevItem.getData('_header'+i);
+                            if (headerContent !== prevHeaderContent) {
+                                itemContent += '<section class="header'+i+'">'+headerContent+'</section>';
+                            }
+                        }
+                    }
+                }
+                if (oneItem[uriProperty]) {
+                    itemContent += '<a href="'+oneItem[uriProperty]+'">';
+                }
+                itemContent += '<section class="item'+(odd ? ' odd' : ' even')+'">';
                 if (typeof oneItem==='string') {
                     itemContent += oneItem;
                 }
@@ -622,7 +909,11 @@ resetContainer = false;
                         itemContent += template;
                     }
                 }
-                itemContent += '</span>';
+                itemContent += '</section>';
+                if (oneItem[uriProperty]) {
+                    itemContent += '</a>';
+                }
+                itemContent += '</section>';
                 return itemContent;
             },
 
