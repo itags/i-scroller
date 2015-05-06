@@ -4,13 +4,14 @@ module.exports = function (window) {
     require('./css/i-scroller.css'); // <-- define your own itag-name here
 
     var margeItems = 3,
+        MAX_AREAS_SHIFTED = 10,
         itagCore = require('itags.core')(window),
         itagName = 'i-scroller', // <-- define your own itag-name here
         DOCUMENT = window.document,
         ITSA = window.ITSA,
         Event = ITSA.Event,
-        AUTO_EXPAND_DELAY = 2000,
-        AUTO_REFRESH_STARTITEM_DURING_SWIPE = 50,
+        AUTO_EXPAND_DELAY = 350,
+        AUTO_REFRESH_STARTITEM_DURING_SWIPE = 15, // not higher: during high-speed swipe you could loose the items
         IParcel = require('i-parcel')(window),
         microtemplate = require('i-parcel/lib/microtemplate.js'),
         scrollers = [],
@@ -31,15 +32,17 @@ module.exports = function (window) {
                 var len = scrollers.length,
                     i;
                 for (i=0; i<len; i++) {
-// expand has currently errors, when not expanding, but scrolled --> afterwards
-// the scrollerContainer is shifted out of view
-// THEREFORE comment `autoExpand()` for now:
-
-                    // scrollers[i].autoExpand();
-
+                    scrollers[i].autoExpand();
                 }
             }, AUTO_EXPAND_DELAY, true);
         };
+
+        Event.before('dd', function(e) {
+            var node = e.target,
+                sourceNode = e.sourceTarget,
+                iscroller = node.getParent();
+            iscroller.hasData('_dragging') && e.preventDefault();
+        }, 'i-scroller >span, i-table >span');
 
         Event.after('dd', function(e) {
             // start dragging
@@ -48,7 +51,7 @@ module.exports = function (window) {
                 iscroller = node.getParent(),
                 dragPromise = e.dd;
             // store initial start-item:
-            iscroller.setData('_scrollBefore', iscroller.model['start-item']);
+            // iscroller.setData('_scrollBefore', iscroller.model['start-item']);
             dragPromise.finally(function() {
                 iscroller.redefineStartItem(true);
 
@@ -76,8 +79,6 @@ module.exports = function (window) {
                 //     });
                 // }
 
-
-                iscroller.removeData('_dragging');
             });
         }, 'i-scroller >span, i-table >span');
 
@@ -259,21 +260,24 @@ module.exports = function (window) {
             *
             * @method swipe
             * @param distance {Number} distance in pixels
+            * @param [speed=25] {Number} pixels/sec (should be between 1-250)
             * @param [duration=3] {Number} duration of the transition in seconds
+            * @param [stopOnClick=false] {Boolean} to make swiping stop when the scroller is clicked (tapped)
             * @since 0.0.1
             */
-            swipe: function(distance, duration) {
-console.info('SWIPE');
+            swipe: function(distance, speed, stopOnClick) {
                 var element = this,
                     property = element.model.horizontal ? 'left' : 'top',
                     scrollContainer = element.getData('_scrollContainer'),
+                    duration = Math.round(Math.abs(distance)/Math.inbetween(1, speed || 25, 250)),
                     newValue = parseInt((scrollContainer.getInlineStyle(property) || 0), 10) - distance,
-                    timer, transPromise, returnPromise;
+                    timer, transPromise, returnPromise, stopListener;
 
                 element.setData('_dragging', true);
                 scrollContainer.setData('_dragUp', (distance>0));
                 timer = ITSA.later(function() {
                     element.redefineStartItem();
+                    // if the edgde is reached: then bounce
                 }, AUTO_REFRESH_STARTITEM_DURING_SWIPE, true);
                 transPromise = scrollContainer.transition({
                     property: property,
@@ -285,6 +289,7 @@ console.info('SWIPE');
                         // go async to make model sets its new value
                         ITSA.async(function() {
                             timer.cancel();
+                            stopListener.detach();
                             element.redefineStartItem(true);
                             // go async again to make model sets its new value
                             ITSA.async(resolve);
@@ -295,11 +300,15 @@ console.info('SWIPE');
                 returnPromise.cancel = transPromise.cancel.bind(transPromise);
                 returnPromise.freeze = transPromise.freeze.bind(transPromise);
                 returnPromise.finish = transPromise.finish.bind(transPromise);
+                if (stopOnClick) {
+                    stopListener = element.selfAfter('tap', function() {
+                        returnPromise.freeze();
+                    }, 'i-scroller >span, i-table >span');
+                }
                 return returnPromise;
             },
 
             sync: function() {
-// console.warn('SYNC');
                 var element = this,
                     model = element.model,
                     items = model.items,
@@ -317,17 +326,14 @@ console.info('SWIPE');
                     startItem = isDragging ? element.getData('_draggedStartItem') : model['start-item'], // impossible to overrule when dragging
                     startItemFloor = Math.floor(startItem),
                     scrollContainerVChildNodes = scrollContainer.vnode.vChildNodes,
-                    indentNode, indentNode2, shiftFromFirstRange, topNode, size2, scrolledPages, firstIsInside, lastIsInside, draggedUp, middleNodeIndex, nodeSize, contSize,
-                    beyondEdge, beyondEdgecount, node, shift, dif, prevFirstIndex, prevLastIndex, count, noOverlap, prevLowerShiftNodeIndex, middleNode, firstChildNode,
-                    firstIndex, j, k, len, content, i, lastIndex, item, newHeight, lowerNode, prevItem, lowerShiftNodeIndex, sectionsShifted, currentStart, currentShift;
+                    indentNode, indentNode2, shiftFromFirstRange, topNode, size2, firstIsInside, lastIsInside, draggedUp, middleNodeIndex, nodeSize, contSize,
+                    beyondEdge, beyondEdgecount, node, shift, dif, prevFirstIndex, prevLastIndex, count, noOverlap, middleNode, firstChildNode,
+                    firstIndex, j, k, len, i, lastIndex, item, lowerNode, prevItem, lowerShiftNodeIndex, sectionsShifted, currentShift;
 
-// console.warn('SYNC isDragging: '+isDragging+' | startItem: '+startItem);
-                content = '';
                 // if container is empty: fill it as far as needed
                 firstIndex = Math.max(0, Math.round((startItem - margeItems)));
                 contSize = 0;
                 if (scrollContainer.isEmpty()) {
-console.warn('container is empty');
                     lastIndex = items.length-1;
                     middleNodeIndex = firstIndex + Math.round((lastIndex-firstIndex)/2);
                     beyondEdgecount = 0;
@@ -371,297 +377,197 @@ console.warn('container is empty');
                     count = scrollContainerVChildNodes.length;
                     lastIndex = firstIndex + count - 1;
                     middleNodeIndex = firstIndex + Math.round((lastIndex-firstIndex)/2);
-// console.warn('firstIndex '+prevFirstIndex+' --> '+firstIndex);
-// console.warn('lastIndex '+prevLastIndex+' --> '+lastIndex);
-
                     if (!isDragging || ((firstIndex!==prevFirstIndex) || (lastIndex!==prevLastIndex))) {
-                            firstChildNode = scrollContainerVChildNodes[0].domNode;
-                            size2 = 0;
-                            firstIsInside = ((firstIndex>=prevFirstIndex) && (firstIndex<=prevLastIndex));
-                            lastIsInside = ((lastIndex>=prevFirstIndex) && (lastIndex<=prevLastIndex));
-                            noOverlap = !firstIsInside && !lastIsInside;
-                            if (noOverlap) {
-console.warn('no overlap');
-                                // completely refill
-                                for (i=firstIndex; i<=lastIndex; i++) {
-                                    item = items[i];
-                                    prevItem = items[i-1];
-                                    node = scrollContainerVChildNodes[i-firstIndex].domNode.setHTML(element.drawItem(item, prevItem, i));
+                        firstChildNode = scrollContainerVChildNodes[0].domNode;
+                        size2 = 0;
+                        firstIsInside = ((firstIndex>=prevFirstIndex) && (firstIndex<=prevLastIndex));
+                        lastIsInside = ((lastIndex>=prevFirstIndex) && (lastIndex<=prevLastIndex));
+                        noOverlap = !firstIsInside && !lastIsInside;
+                        if (noOverlap) {
+                            // completely refill
+                            for (i=firstIndex; i<=lastIndex; i++) {
+                                item = items[i];
+                                prevItem = items[i-1];
+                                node = scrollContainerVChildNodes[i-firstIndex].domNode;
+                                node.setHTML(element.drawItem(item, prevItem, i));
+                                nodeSize = node[size];
+                                contSize += nodeSize;
+                                node.setData('_index', i);
+                                (i===firstIndex) && scrollContainer.setData('_upperNode', node);
+                                (i===startItemFloor) && (topNode=node);
+                                (i===middleNodeIndex) && (middleNode=node);
+                                (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
+                            }
+                            scrollContainer.removeData('_lowerShiftNode');
+                            scrollContainer.setData('_lowerNode', node);
+                        }
+                        else {
+                            // the list is broken into 2 area's
+                            // the division is at item "firstIndex", which IS NOT the first childNode!
+                            // we start with the one item that we know that is already drawn and will redraw all others from that point.
+                            len = scrollContainerVChildNodes.length;
+                            draggedUp = scrollContainer.getData('_dragUp');
+                            if (firstIsInside) {
+                                // start with "firstIndex"
+                                // first we need to find it:
+                                for (i=0; i<len; i++) {
+                                    node = scrollContainerVChildNodes[i].domNode;
+                                    if (node.getData('_index')===firstIndex) {
+                                        break;
+                                    }
+                                }
+                                // "i" has the index of the first item to draw
+                                // first, going up:
+                                k = firstIndex - 1;
+                                for (j=i; j<len; j++) {
+                                    prevItem = items[k];
+                                    item = items[++k];
+                                    node = scrollContainerVChildNodes[j].domNode;
+                                    if (node.getData('_index')!==k) {
+                                        if (item) {
+                                            node.setHTML(element.drawItem(item, prevItem, k));
+                                            lowerNode = node;
+                                        }
+                                        else {
+                                            node.empty();
+                                            node.setClass('empty');
+                                        }
+                                        node.setData('_index', k);
+                                    }
                                     nodeSize = node[size];
                                     contSize += nodeSize;
-                                    node.setData('_index', i);
-                                    (i===firstIndex) && scrollContainer.setData('_upperNode', node);
-                                    (i===startItemFloor) && (topNode=node);
-                                    (i===middleNodeIndex) && (middleNode=node);
                                     (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
+                                    (k===startItemFloor) && (topNode=node);
+                                    if (j===i) {
+                                        indentNode = node;
+                                        lowerShiftNodeIndex = i;
+                                    }
+                                    (k===middleNodeIndex) && (middleNode=node);
                                 }
-                                scrollContainer.removeData('_lowerShiftNode');
-                                scrollContainer.removeData('_lowerShiftNodeIndex');
-                                scrollContainer.setData('_lowerNode', node);
-                                scrollContainer.removeData('_scrolledPages');
+                                // now we are starting from 0 to i:
+                                for (j=0; j<i; j++) {
+                                    prevItem = items[k];
+                                    item = items[++k];
+                                    node = scrollContainerVChildNodes[j].domNode;
+                                    if (node.getData('_index')!==k) {
+                                        if (item) {
+                                            node.setHTML(element.drawItem(item, prevItem, k));
+                                            lowerNode = node;
+                                        }
+                                        else {
+                                            node.empty();
+                                            node.setClass('empty');
+                                        }
+                                        node.setData('_index', k);
+                                    }
+                                    (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
+                                    nodeSize = node[size];
+                                    contSize += nodeSize;
+                                    size2 += nodeSize;
+                                    (k===startItemFloor) && (topNode=node);
+                                    (j===0) && (indentNode2=node);
+                                    (k===middleNodeIndex) && (middleNode=node);
+                                }
+                                scrollContainer.setData('_lowerNode', lowerNode);
+                                scrollContainer.setData('_contSize', contSize);
+                                scrollContainer.setData('_upperNode', indentNode);
                             }
                             else {
-                                // the list is broken into 2 area's
-                                // the division is at item "firstIndex", which IS NOT the first childNode!
-                                // we start with the one item that we know that is already drawn and will redraw all others from that point.
-                                len = scrollContainerVChildNodes.length;
-                                draggedUp = scrollContainer.getData('_dragUp');
-                                if (firstIsInside) {
-console.warn('first inside');
-                                    // start with "firstIndex"
-                                    // first we need to find it:
-                                    for (i=0; i<len; i++) {
-                                        node = scrollContainerVChildNodes[i].domNode;
-                                        if (node.getData('_index')===firstIndex) {
-                                            break;
-                                        }
+                                // --going down--
+                                // start with "lastIndex"
+                                // first we need to find it:
+                                for (i=0; i<len; i++) {
+                                    node = scrollContainerVChildNodes[i].domNode;
+                                    if (node.getData('_index')===lastIndex) {
+                                        break;
                                     }
-                                    // "i" has the index of the first item to draw
-                                    // first, going up:
-                                    k = firstIndex - 1;
-                                    for (j=i; j<len; j++) {
-console.warn('fase 1.a');
-                                        prevItem = items[k];
-                                        item = items[++k];
-                                        node = scrollContainerVChildNodes[j].domNode;
-                                        if (node.getData('_index')!==k) {
-                                            if (item) {
-                                                node = node.setHTML(element.drawItem(item, prevItem, k));
-                                                lowerNode = node;
-                                            }
-                                            else {
-                                                node.empty();
-                                                node.setClass('empty');
-                                            }
-                                            node.setData('_index', k);
-                                        }
-                                        nodeSize = node[size];
-                                        contSize += nodeSize;
-                                        (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
-                                        (k===startItemFloor) && (topNode=node);
-                                        if (j===i) {
-                                            indentNode = node;
-                                            lowerShiftNodeIndex = i;
-                                        }
-                                        (k===middleNodeIndex) && (middleNode=node);
-                                    }
-                                    // now we are starting from 0 to i:
-                                    for (j=0; j<i; j++) {
-console.warn('fase 1.b');
-                                        prevItem = items[k];
-                                        item = items[++k];
-                                        node = scrollContainerVChildNodes[j].domNode;
-                                        if (node.getData('_index')!==k) {
-                                            if (item) {
-                                                node = node.setHTML(element.drawItem(item, prevItem, k));
-                                                lowerNode = node;
-                                            }
-                                            else {
-                                                node.empty();
-                                                node.setClass('empty');
-                                            }
-                                            node.setData('_index', k);
-                                        }
-                                        (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
-                                        nodeSize = node[size];
-                                        contSize += nodeSize;
-                                        size2 += nodeSize;
-                                        (k===startItemFloor) && (topNode=node);
-                                        (j===0) && (indentNode2=node);
-                                        (k===middleNodeIndex) && (middleNode=node);
-                                    }
-                                    scrollContainer.setData('_lowerNode', lowerNode);
-                                    scrolledPages = scrollContainer.getData('_scrolledPages') || 0;
-                                    scrollContainer.setData('_contSize', contSize);
-
-
-
-                                    indentNode2 && indentNode && indentNode.setInlineStyle('margin-'+start, -contSize+'px');
-indentNode2 && indentNode && console.warn('indentNode: '+indentNode.getOuterHTML());
-
-//                                     prevLowerShiftNodeIndex = scrollContainer.getData('_lowerShiftNodeIndex');
-
-
-
-// console.warn('scrollContainer.getInlineStyle(start) '+scrollContainer.getInlineStyle(start));
-
-// newHeight = size1*((indentNode2 ? 1 : 0)-Math.ceil(parseInt(scrollContainer.getInlineStyle(start) || 0, 10)/size1));
-// console.warn('newHeight '+(indentNode2 ? size1 : 0)+'+'+(size1*(-Math.ceil(parseInt(scrollContainer.getInlineStyle(start) || 0, 10)/size1)))+' --> '+newHeight);
-
-
-                                    // if (indentNode2) {
-// console.warn('Fase 2');
-// if (indentNode) {
-//     console.warn('indentNode: '+indentNode.getOuterHTML());
-// }
-// else {
-//     console.warn(' NO indentNode ?!?');
-// }
-// console.warn('indentNode2: '+indentNode2.getOuterHTML());
-
-//                                         indentNode && indentNode.setInlineStyle('margin-'+start, -size1+'px');
-//                                         // indentNode2.setInlineStyle('margin-'+start, ((1+scrolledPages)*size1)+'px');
-
-//                                         indentNode2.setInlineStyle('margin-'+start, newHeight+'px');
-
-//                                         scrollContainer.setData('_lowerShiftNode', indentNode);
-//                                         scrollContainer.setData('_lowerShiftNodeIndex', lowerShiftNodeIndex);
-// console.info(scrollContainer.getOuterHTML());
-//                                     }
-//                                     else {
-// console.warn('Fase 3');
-//                                         node = scrollContainerVChildNodes[i].domNode;
-//                                         // node.setInlineStyle('margin-'+start, (scrolledPages*size1)+'px');
-
-//                                         node.setInlineStyle('margin-'+start, newHeight+'px');
-
-//                                         scrollContainer.removeData('_lowerShiftNode');
-//                                         scrollContainer.removeData('_lowerShiftNodeIndex');
-//                                     }
-// // console.warn('scrolledpages: '+scrolledPages);
-
-
-
-
-                                    scrollContainer.setData('_upperNode', indentNode);
                                 }
-                                else {
-console.warn('first not inside');
-                                    // --going down--
-                                    // start with "lastIndex"
-                                    // first we need to find it:
-                                    for (i=0; i<len; i++) {
-                                        node = scrollContainerVChildNodes[i].domNode;
-                                        if (node.getData('_index')===lastIndex) {
-                                            break;
+                                // "i" has the index of the last item to draw
+                                // first, going down:
+                                k = lastIndex + 1;
+                                for (j=i; j>=0; j--) {
+                                    item = items[--k];
+                                    prevItem = items[k-1];
+                                    node = scrollContainerVChildNodes[j].domNode;
+                                    if (node.getData('_index')!==k) {
+                                        if (item) {
+                                            node.setHTML(element.drawItem(item, prevItem, k));
                                         }
+                                        else {
+                                            node.empty();
+                                            node.setClass('empty');
+                                        }
+                                        node.setData('_index', k);
                                     }
-                                    // "i" has the index of the last item to draw
-                                    // first, going down:
-                                    k = lastIndex + 1;
-                                    for (j=i; j>=0; j--) {
-                                        item = items[--k];
-                                        prevItem = items[k-1];
-                                        node = scrollContainerVChildNodes[j].domNode;
-                                        if (node.getData('_index')!==k) {
-                                            if (item) {
-                                                node = node.setHTML(element.drawItem(item, prevItem, k));
-                                            }
-                                            else {
-                                                node.empty();
-                                                node.setClass('empty');
-                                            }
-                                            node.setData('_index', k);
-                                        }
-                                        nodeSize = node[size];
-                                        contSize += nodeSize;
-                                        (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
-                                        (k===startItemFloor) && (topNode=node);
-                                        (j===0) && (indentNode2=node);
-                                        if (j===i) {
-                                            scrollContainer.setData('_lowerNode', node);
-                                        }
-                                        (k===middleNodeIndex) && (middleNode=node);
+                                    nodeSize = node[size];
+                                    contSize += nodeSize;
+                                    (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
+                                    (k===startItemFloor) && (topNode=node);
+                                    (j===0) && (indentNode2=node);
+                                    if (j===i) {
+                                        scrollContainer.setData('_lowerNode', node);
                                     }
-                                    // now we are starting from len-1 downto i:
-                                    for (j=len-1; j>i; j--) {
-                                        item = items[--k];
-                                        prevItem = items[k-1];
-                                        node = scrollContainerVChildNodes[j].domNode;
-                                        if (node.getData('_index')!==k) {
-                                            if (item) {
-                                                node = node.setHTML(element.drawItem(item, prevItem, k));
-                                            }
-                                            else {
-                                                node.empty();
-                                                node.setClass('empty');
-                                            }
-                                            node.setData('_index', k);
-                                        }
-                                        (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
-                                        nodeSize = node[size];
-                                        contSize += nodeSize;
-                                        size2 += nodeSize;
-                                        (k===startItemFloor) && (topNode=node);
-                                        if (j===(i+1)) {
-                                            indentNode = node;
-                                            lowerShiftNodeIndex = i+1;
-                                        }
-                                        (k===middleNodeIndex) && (middleNode=node);
-                                    }
-
-
-                                    indentNode && indentNode.setInlineStyle('margin-'+start, -contSize+'px');
-                                    // prevLowerShiftNodeIndex = scrollContainer.getData('_lowerShiftNodeIndex');
-                                    // scrolledPages = scrollContainer.getData('_scrolledPages') || 0;
-                                    // size1 = scrollContainer[size];
-                                    scrollContainer.setData('_contSize', contSize);
-
-
-//                                     newHeight = (scrolledPages*size1);
-
-// console.warn('scrollContainer.getInlineStyle(start) '+scrollContainer.getInlineStyle(start));
-
-// newHeight = size1*((indentNode ? 1 : 0)-Math.ceil(parseInt(scrollContainer.getInlineStyle(start) || 0, 10)/size1));
-// console.warn('newHeight '+(indentNode ? size1 : 0)+'+'+(size1*(-Math.ceil(parseInt(scrollContainer.getInlineStyle(start) || 0, 10)/size1)))+' --> '+newHeight);
-//                                     // newHeight = ((1+scrolledPages)*size1);
-//                                     indentNode2 && indentNode2.setInlineStyle('margin-'+start, newHeight+'px');
-//                                     if (indentNode) {
-// console.warn('fase F');
-//                                         indentNode.setInlineStyle('margin-'+start, -size1+'px');
-//                                         scrollContainer.setData('_lowerShiftNode', indentNode);
-//                                         scrollContainer.setData('_lowerShiftNodeIndex', lowerShiftNodeIndex);
-//                                     }
-//                                     else {
-// console.warn('fase G');
-//                                         scrollContainer.removeData('_lowerShiftNode');
-//                                         scrollContainer.removeData('_lowerShiftNodeIndex');
-//                                     }
-                                    scrollContainer.setData('_upperNode', node);
+                                    (k===middleNodeIndex) && (middleNode=node);
                                 }
-
-
-
+                                // now we are starting from len-1 downto i:
+                                for (j=len-1; j>i; j--) {
+                                    item = items[--k];
+                                    prevItem = items[k-1];
+                                    node = scrollContainerVChildNodes[j].domNode;
+                                    if (node.getData('_index')!==k) {
+                                        if (item) {
+                                            node.setHTML(element.drawItem(item, prevItem, k));
+                                        }
+                                        else {
+                                            node.empty();
+                                            node.setClass('empty');
+                                        }
+                                        node.setData('_index', k);
+                                    }
+                                    (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
+                                    nodeSize = node[size];
+                                    contSize += nodeSize;
+                                    size2 += nodeSize;
+                                    (k===startItemFloor) && (topNode=node);
+                                    if (j===(i+1)) {
+                                        indentNode = node;
+                                        lowerShiftNodeIndex = i+1;
+                                    }
+                                    (k===middleNodeIndex) && (middleNode=node);
+                                }
+                                scrollContainer.setData('_contSize', contSize);
                             }
-
-
-                            // most middle element should be within the viewport.
-                            // if it isn't anymore, we need to reset margin-top of the first childnode:
-                            if ((middleNode[start]>iscrollerBottom) || (middleNode[end]<iscrollerStart)) {
-                    console.warn('SYNC FOUND NO FIRST VISIBLE NODE --> (middleNode[start]>iscrollerBottom): '+(middleNode[start]>iscrollerBottom)+' | (middleNode[end]<iscrollerStart): '+(middleNode[end]<iscrollerStart));
-                                sectionsShifted = -Math.floor((middleNode[start] - iscrollerStart)/contSize);
-
-                                // currentStart = parseInt(scrollContainer.getInlineStyle(start), 10);
-console.warn('middleNode: '+middleNode.getHTML());
-console.warn('middleNode[end]: '+middleNode[end]);
-console.warn('iscrollerStart: '+iscrollerStart);
-console.warn('scrollContSize: '+contSize);
-console.warn('sectionsShifted: '+sectionsShifted);
-// console.warn('currentStart: '+currentStart);
-// console.warn('new currentStart: '+(currentStart+(sectionsShifted*size1)));
-console.warn('first childnode: '+firstChildNode.getOuterHTML());
-                                currentShift = parseInt((firstChildNode.getInlineStyle('margin-'+start) || 0), 10);
-                                firstChildNode.setInlineStyle('margin-'+start, (currentShift+(sectionsShifted*contSize))+'px');
-                            }
-
-
-                            if (topNode && !isDragging) {
-                                shift = topNode[start];
-                                dif = (startItem-startItemFloor);
-                                if (dif>0) {
-                                    shift += dif*topNode[size];
+                            if (indentNode) {
+                                if (indentNode2) {
+                                    indentNode.setInlineStyle('margin-'+start, -contSize+'px');
+                                    scrollContainer.setData('_lowerShiftNode', indentNode);
                                 }
-                                if (shiftFromFirstRange) {
-                                    shift -= scrollContainer[size]-size2;
-                                }
-                                scrollContainer.setInlineStyle(start, (scrollContainer[start]-shift)+'px');
                             }
-
-                            scrollContainer.setData('_contSize', contSize);
-
-
-                            scrollContainer.setData('_firstIndex', firstIndex);
-                            scrollContainer.setData('_lastIndex', lastIndex);
+                            else {
+                                scrollContainer.removeData('_lowerShiftNode');
+                            }
+                        }
+                        // most middle element should be within the viewport.
+                        // if it isn't anymore, we need to reset margin-top of the first childnode:
+                        if ((middleNode[start]>iscrollerBottom) || (middleNode[end]<iscrollerStart)) {
+                            sectionsShifted = -Math.floor((middleNode[start] - iscrollerStart)/contSize);
+                            currentShift = parseInt((firstChildNode.getInlineStyle('margin-'+start) || 0), 10);
+                            firstChildNode.setInlineStyle('margin-'+start, (currentShift+(sectionsShifted*contSize))+'px');
+                        }
+                        if (topNode && !isDragging) {
+                            shift = topNode[start];
+                            dif = (startItem-startItemFloor);
+                            if (dif>0) {
+                                shift += dif*topNode[size];
+                            }
+                            if (shiftFromFirstRange) {
+                                shift -= scrollContainer[size]-size2;
+                            }
+                            scrollContainer.setInlineStyle(start, (scrollContainer[start]-shift)+'px');
+                        }
+                        scrollContainer.setData('_contSize', contSize);
+                        scrollContainer.setData('_firstIndex', firstIndex);
+                        scrollContainer.setData('_lastIndex', lastIndex);
                     }
                 }
             },
@@ -669,9 +575,11 @@ console.warn('first childnode: '+firstChildNode.getOuterHTML());
             autoExpand: function() {
                 var element = this,
                     model = element.model,
+                    count = 0,
+                    maxCount = 100, // if -for whatever reason- more than 100 items are added, than break
                     scrollContainer = element.getData('_scrollContainer'),
                     scrollContainerVChildNodes = scrollContainer.vnode.vChildNodes,
-                    count = scrollContainerVChildNodes.length,
+                    len = scrollContainerVChildNodes.length,
                     lowerNode = scrollContainer.getData('_lowerNode'),
                     items = model.items,
                     horizontal = model.horizontal,
@@ -680,35 +588,36 @@ console.warn('first childnode: '+firstChildNode.getOuterHTML());
                     size = horizontal ? 'width' : 'height',
                     maxIndex = items.length-1,
                     isDragging = element.hasData('_dragging'),
-                    item, index, firstChildNode, startShift, lowerShiftNode, lowerShift, size1, lowerNodeAtPosZero;
-                if (!isDragging && (count>0)) {
+                    item, index, firstChildNode, startShift, lowerShiftNode, lowerShift, size1, lowerNodeAtPosZero, prevItem, startContainerShift;
+                if (!isDragging && (len>0)) {
                     firstChildNode = scrollContainerVChildNodes[0].domNode;
-                    startShift = parseInt(firstChildNode.getInlineStyle('margin-'+start), 10);
+                    startShift = parseInt(firstChildNode.getInlineStyle('margin-'+start) || 0, 10);
+                    startContainerShift = parseInt(scrollContainer.getInlineStyle(start) || 0, 10);
                     lowerShiftNode = scrollContainer.getData('_lowerShiftNode');
-                    lowerShiftNode && (lowerShift=parseInt(lowerShiftNode.getInlineStyle('margin-'+start), 10));
+                    lowerShiftNode && (lowerShift=parseInt(lowerShiftNode.getInlineStyle('margin-'+start) || 0, 10));
                     index = lowerNode.getData('_index');
                     lowerNodeAtPosZero = (lowerNode===firstChildNode);
-                    while ((lowerNode[start]<element[end]) && (++index<=maxIndex)) {
+                    while ((lowerNode[start]<(element[end]+((margeItems-1)*lowerNode[size]))) && (++index<=maxIndex) && (++count<maxCount)) {
                         item = items[index];
-                        lowerNode = scrollContainer.append('<section>'+element.drawItem(item, index)+'</section>', false, !lowerNodeAtPosZero ? lowerNode : null);
+                        prevItem = items[index-1];
+                        lowerNode = scrollContainer.append('<section>'+element.drawItem(item, prevItem, index)+'</section>', false, lowerNodeAtPosZero ? null : lowerNode);
                         lowerNode.setData('_index', index);
                         scrollContainer.setData('_lastIndex', index);
                         scrollContainer.setData('_lowerNode', lowerNode);
-                        size1 = lowerNode[size];
-                        startShift += size1;
                         if (lowerShiftNode) {
+                            size1 = lowerNode[size];
+                            startShift += size1;
                             lowerShift -= size1;
                             lowerShiftNode.setInlineStyle('margin-'+start, lowerShift+'px');
                             firstChildNode.setInlineStyle('margin-'+start, startShift+'px');
-                            startShift = parseInt(scrollContainer.getInlineStyle(start), 10);
-                            startShift -= size1;
-                            scrollContainer.setInlineStyle(start, startShift+'px');
+                            startContainerShift -= size1;
+                            scrollContainer.setInlineStyle(start, startContainerShift+'px');
                         }
                     }
                 }
             },
 
-            redefineStartItem: function(resetContainer, second) {
+            redefineStartItem: function(resetContainer, retry) {
                 var element = this,
                     model = element.model,
                     horizontal = model.horizontal,
@@ -718,102 +627,40 @@ console.warn('first childnode: '+firstChildNode.getOuterHTML());
                     size = horizontal ? 'width' : 'height',
                     borderStart = element.getStyle('border-'+start+'width'),
                     iscrollerStart = element[start] + (parseInt(borderStart, 10) || 0),
-                    dragUp = scrollContainer.getData('_dragUp'),
                     scrollContSize = scrollContainer.getData('_contSize'),
-                    MAX_HEIGHT = 9999999,
-                    highestEnd = MAX_HEIGHT,
-                    highestEndNotFound = MAX_HEIGHT,
                     vChildNodes = scrollContainer.vnode.vChildNodes,
                     len = vChildNodes.length,
-                    partial, i, firstVisibleNode, firstVisibleNodeNotFound, startItem, domNode, endPos, foundNode, middleNode,
-                    contHeight, firstNode, value, scrolledPages, sectionsShifted, currentStart, middleNodeIndex, currentShift;
+                    partial, i, startItem, domNode, endPos, foundNode, corrections, highestEnd,
+                    contSize, firstNode, sectionsShifted, currentStart, currentShift, currentMarginStart;
 
                 // find the first childNode that lies within the visible area:
-                middleNodeIndex = (Math.round(len-1)/2);
                 for (i=0; (i<len); i++) {
                     domNode = vChildNodes[i].domNode;
                     endPos = domNode[end];
-                    if ((endPos>iscrollerStart) && (endPos<highestEnd)) {
-                        // if (domNode[start]<=iscrollerStart) {
-                            firstVisibleNode = domNode;
-                            highestEnd = endPos;
-                        // }
-                        // else if (endPos<highestEndNotFound) {
-                            // need to search for the highest item when there was none
-                            // firstVisibleNodeNotFound = domNode;
-                            // highestEndNotFound = endPos;
-                        // }
+                    if ((endPos>iscrollerStart) && ((highestEnd===undefined) || (endPos<highestEnd))) {
+                        foundNode = domNode;
+                        highestEnd = endPos;
                     }
-                    (i===middleNodeIndex) && (middleNode=domNode);
                 }
-// console.warn('scrollContainer.top '+scrollContainer.top);
-                foundNode = firstVisibleNode;
-
-
-                if (!firstVisibleNode) {
-
-
-if (second) {
-console.warn('AGAIN NO FIRST VISIBLE NODE --> exit');
-    return;
-}
-                    console.warn('NO FIRST VISIBLE NODE --> reset container-top');
-                    sectionsShifted = -Math.floor((middleNode[start] - iscrollerStart)/scrollContSize);
-                    // currentStart = parseInt(scrollContainer.getInlineStyle(start), 10) || 0;
-console.warn('middleNode: '+middleNode.getHTML());
-console.warn('middleNode[start]: '+middleNode[start]);
-console.warn('iscrollerStart: '+iscrollerStart);
-console.warn('scrollContSize: '+scrollContSize);
-console.warn('sectionsShifted: '+sectionsShifted);
-// console.warn('currentStart: '+currentStart);
-// console.warn('new currentStart: '+(currentStart+(sectionsShifted*scrollContSize)));
-                    domNode = vChildNodes[0].domNode;
-                    currentShift = parseInt((domNode.getInlineStyle('margin-'+start) || 0), 10);
-                    domNode.setInlineStyle('margin-'+start, (currentShift+(sectionsShifted*scrollContSize))+'px');
-                    return element.redefineStartItem(resetContainer, true);
-                }
-
-
                 if (foundNode) {
-// console.warn('foundNode '+foundNode.getOuterHTML());
                     partial = (iscrollerStart-foundNode[start])/foundNode[size];
                     startItem = foundNode.getData('_index') + partial;
-if (!firstVisibleNode) {
-    // console.warn('OOPS: firstVisibleNode not Found: will take '+firstVisibleNodeNotFound.getOuterHTML()+' --> startitem: '+startItem);
-    // console.warn(scrollContainer.getOuterHTML());
-}
-// console.warn('setting startitem to: '+foundNode.getData('_index')+'+'+partial+' = '+startItem);
-                }
-                else {
-                    // try again asynchronously:
-console.warn('redefineStartItem found RETRY SETTING STARTITEM');
-                    ITSA.async(function() {
-                        element.redefineStartItem(resetContainer);
-                    });
-                    return;
-                }
-                // Make it impossible to overrule when dragging by storing the data:
-// console.warn('setting dragged startitem: '+element.getData('_draggedStartItem')+' --> '+startItem);
-                element.setData('_draggedStartItem', startItem);
-                model['start-item'] = startItem;
-                if (resetContainer) {
-                    scrolledPages = scrollContainer.getData('_scrolledPages');
-console.warn('resetContainer, scrolledPages: '+scrolledPages+' | dragUp: '+dragUp);
-                    if (scrolledPages) {
-                        // (scrolledPages<0) && (scrolledPages++);
-                        contHeight = scrollContainer.getData('_contSize');
-console.warn('contHeight '+contHeight);
-                        value = parseInt(scrollContainer.getInlineStyle(start), 10);
-console.warn('value '+value+' --> '+(value+(scrolledPages*contHeight)));
-                        scrollContainer.setInlineStyle(start, (value+(scrolledPages*contHeight))+'px');
+                    // Make it impossible to overrule when dragging by storing the data:
+                    element.setData('_draggedStartItem', startItem);
+                    model['start-item'] = startItem;
+                    if (resetContainer) {
+                        contSize = scrollContainer.getData('_contSize');
                         firstNode = vChildNodes[0].domNode;
-                        value = parseInt(firstNode.getInlineStyle('margin-'+start), 10) || 0;
-                        firstNode.setInlineStyle('margin-'+start, (value-(scrolledPages*contHeight))+'px');
-                    }
-                    scrollContainer.removeData('_scrolledPages');
-                    // ITSA.async(function() {
+                        currentMarginStart = parseInt(firstNode.getInlineStyle('margin-'+start) || 0, 10);
+                        currentStart = parseInt(scrollContainer.getInlineStyle(start) || 0, 10);
+                        corrections = Math.round(currentMarginStart/contSize);
+                        if (Math.abs(corrections)>MAX_AREAS_SHIFTED) {
+                            // prevent that movement gets a value that is too high for the dom to handle
+                            scrollContainer.setInlineStyle(start, (currentStart+(corrections*contSize))+'px');
+                            firstNode.removeInlineStyle('margin-'+start);
+                        }
                         element.removeData('_dragging');
-                    // });
+                    }
                 }
             },
 
