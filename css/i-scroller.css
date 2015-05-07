@@ -59,6 +59,14 @@ i-scroller >span {
     width: 100%;
 }
 
+i-scroller >span[dd-direction="y"] {
+    left: 0 !important;
+}
+
+i-scroller >span[dd-direction="x"] {
+    top: 0 !important;
+}
+
 i-scroller[horizontal="true"] >span {
     width: inherit;
     height: 100%;

@@ -10,7 +10,7 @@ module.exports = function (window) {
         DOCUMENT = window.document,
         ITSA = window.ITSA,
         Event = ITSA.Event,
-        AUTO_EXPAND_DELAY = 350,
+        AUTO_EXPAND_DELAY = 200,
         AUTO_REFRESH_STARTITEM_DURING_SWIPE = 15, // not higher: during high-speed swipe you could loose the items
         IParcel = require('i-parcel')(window),
         microtemplate = require('i-parcel/lib/microtemplate.js'),
@@ -37,10 +37,20 @@ module.exports = function (window) {
             }, AUTO_EXPAND_DELAY, true);
         };
 
+        Event.before('mousewheel', function(e) {
+            var node = e.target,
+                iscroller = node.getParent(),
+                delta = e['wheelDelta'+(iscroller.model.horizontal ? 'X' : 'Y')];
+
+console.warn('delta '+delta);
+e.preventDefault();
+        }, 'i-scroller >span, i-table >span');
+
         Event.before('dd', function(e) {
             var node = e.target,
-                sourceNode = e.sourceTarget,
-                iscroller = node.getParent();
+                iscroller = node.getParent(),
+                swiper = iscroller.getData('_swiper');
+            swiper && swiper.freeze();
             iscroller.hasData('_dragging') && e.preventDefault();
         }, 'i-scroller >span, i-table >span');
 
@@ -49,11 +59,36 @@ module.exports = function (window) {
             var node = e.target,
                 sourceNode = e.sourceTarget,
                 iscroller = node.getParent(),
-                dragPromise = e.dd;
+                scrollContainer = iscroller.getData('_scrollContainer'),
+                dragPromise = e.dd,
+                horizontal = iscroller.model.horizontal,
+                currentPos = horizontal ? e.yMouse : e.yMouse,
+                prevPos = currentPos,
+                timer;
             // store initial start-item:
             // iscroller.setData('_scrollBefore', iscroller.model['start-item']);
+
+            timer = ITSA.later(function() {
+                prevPos = currentPos;
+                currentPos = horizontal ? e.yMouse : e.yMouse;
+            }, 25, true);
+
             dragPromise.finally(function() {
-                iscroller.redefineStartItem(true);
+                var distance, speed;
+                scrollContainer.removeData('_dragUp')
+                               .removeData('_prevPos');
+                timer.cancel();
+                if (prevPos && currentPos && (prevPos!==currentPos)) {
+                    distance = 8*(prevPos-currentPos);
+                    speed = Math.round(1*Math.abs(distance));
+                    iscroller.swipe(distance, speed, 'ease-out');
+                }
+                else {
+                    iscroller.redefineStartItem(true);
+                }
+
+
+                // iscroller.redefineStartItem(true);
 
 
                 // if (!iscroller.getData('_dragging')) {
@@ -91,7 +126,7 @@ module.exports = function (window) {
                 horizontal = model.horizontal,
                 end = horizontal ? 'right' : 'bottom',
                 start = horizontal ? 'left' : 'top',
-                up, clientX, clientY, boundaryNode;
+                up, clientX, clientY, boundaryNode, prevPos, currentPos;
 
             if (typeof e.center==='object') {
                 clientX = e.center.x;
@@ -105,7 +140,15 @@ module.exports = function (window) {
                 e.preventDefault();
             }
             else {
-                up = horizontal ? (e.clientX>e.xMouse) : (e.clientY>e.yMouse);
+                if (horizontal) {
+                    prevPos = scrollContainer.getData('_prevPos') || e.clientX;
+                    currentPos = e.xMouse;
+                }
+                else {
+                    prevPos = scrollContainer.getData('_prevPos') || e.clientY;
+                    currentPos = e.yMouse;
+                }
+                up = (prevPos>currentPos);
                 if (up) {
                     boundaryNode = scrollContainer.getData('_lowerNode');
                     if (boundaryNode.getData('_index')===(items.length-1)) {
@@ -131,7 +174,7 @@ module.exports = function (window) {
                 horizontal = model.horizontal,
                 end = horizontal ? 'right' : 'bottom',
                 start = horizontal ? 'left' : 'top',
-                up, clientX, clientY, boundaryNode, difference, value, isDragging;
+                up, clientX, clientY, boundaryNode, difference, value, isDragging, prevPos, currentPos;
             if (typeof e.center==='object') {
                 clientX = e.center.x;
                 clientY = e.center.y;
@@ -147,7 +190,15 @@ module.exports = function (window) {
                     iscroller.setData('_dragging', true);
                 }
             }
-            up = horizontal ? (e.clientX>e.xMouse) : (e.clientY>e.yMouse);
+            if (horizontal) {
+                prevPos = scrollContainer.getData('_prevPos') || e.clientX;
+                currentPos = e.xMouse;
+            }
+            else {
+                prevPos = scrollContainer.getData('_prevPos') || e.clientY;
+                currentPos = e.yMouse;
+            }
+            up = (prevPos>currentPos);
             if (up) {
                 boundaryNode = scrollContainer.getData('_lowerNode');
                 if (boundaryNode.getData('_index')===(items.length-1)) {
@@ -170,7 +221,8 @@ module.exports = function (window) {
                 }
                 scrollContainer.setInlineStyle(start, value+'px');
             }
-            scrollContainer.setData('_dragUp', up);
+            scrollContainer.setData('_dragUp', up)
+                           .setData('_prevPos', currentPos);
             iscroller.redefineStartItem();
         }, 'i-scroller >span, i-table >span');
 
@@ -262,17 +314,19 @@ module.exports = function (window) {
             * @param distance {Number} distance in pixels
             * @param [speed=25] {Number} pixels/sec (should be between 1-250)
             * @param [duration=3] {Number} duration of the transition in seconds
-            * @param [stopOnClick=false] {Boolean} to make swiping stop when the scroller is clicked (tapped)
             * @since 0.0.1
             */
-            swipe: function(distance, speed, stopOnClick) {
+            swipe: function(distance, speed, timingFunction) {
                 var element = this,
                     property = element.model.horizontal ? 'left' : 'top',
                     scrollContainer = element.getData('_scrollContainer'),
                     duration = Math.round(Math.abs(distance)/Math.inbetween(1, speed || 25, 250)),
                     newValue = parseInt((scrollContainer.getInlineStyle(property) || 0), 10) - distance,
-                    timer, transPromise, returnPromise, stopListener;
+                    timer, transPromise, returnPromise, swiper;
 
+                // first freeze previous swipe:
+                swiper = element.getData('_swiper');
+                swiper && swiper.freeze();
                 element.setData('_dragging', true);
                 scrollContainer.setData('_dragUp', (distance>0));
                 timer = ITSA.later(function() {
@@ -282,29 +336,32 @@ module.exports = function (window) {
                 transPromise = scrollContainer.transition({
                     property: property,
                     value: newValue+'px',
-                    duration: duration || 3
+                    timingFunction: timingFunction,
+                    duration: duration
                 });
                 returnPromise = new window.Promise(function(resolve) {
                     transPromise.then(function() {
+                        element.removeData('_swiper');
+                        timer.cancel();
                         // go async to make model sets its new value
                         ITSA.async(function() {
-                            timer.cancel();
-                            stopListener.detach();
-                            element.redefineStartItem(true);
+                            // element.redefineStartItem(true);
+                            element.redefineStartItem(!transPromise.frozen);
+
                             // go async again to make model sets its new value
-                            ITSA.async(resolve);
+                            ITSA.async(function() {
+                                resolve();
+                            });
                         });
                     });
                 });
+                element.setData('_swiper', returnPromise);
                 // merge the transitionHandles to the new Promise:
-                returnPromise.cancel = transPromise.cancel.bind(transPromise);
-                returnPromise.freeze = transPromise.freeze.bind(transPromise);
-                returnPromise.finish = transPromise.finish.bind(transPromise);
-                if (stopOnClick) {
-                    stopListener = element.selfAfter('tap', function() {
-                        returnPromise.freeze();
-                    }, 'i-scroller >span, i-table >span');
-                }
+                returnPromise.freeze = function() {
+                    element.redefineStartItem();
+                    element.removeData('_dragging');
+                    return transPromise.freeze();
+                };
                 return returnPromise;
             },
 
@@ -377,6 +434,7 @@ module.exports = function (window) {
                     count = scrollContainerVChildNodes.length;
                     lastIndex = firstIndex + count - 1;
                     middleNodeIndex = firstIndex + Math.round((lastIndex-firstIndex)/2);
+// TODO: size calculation might need to wait for inner i-tag elements to be rendered
                     if (!isDragging || ((firstIndex!==prevFirstIndex) || (lastIndex!==prevLastIndex))) {
                         firstChildNode = scrollContainerVChildNodes[0].domNode;
                         size2 = 0;
@@ -597,6 +655,7 @@ module.exports = function (window) {
                     lowerShiftNode && (lowerShift=parseInt(lowerShiftNode.getInlineStyle('margin-'+start) || 0, 10));
                     index = lowerNode.getData('_index');
                     lowerNodeAtPosZero = (lowerNode===firstChildNode);
+// TODO: the while loop might need to wait for inner i-tag elements to be rendered
                     while ((lowerNode[start]<(element[end]+((margeItems-1)*lowerNode[size]))) && (++index<=maxIndex) && (++count<maxCount)) {
                         item = items[index];
                         prevItem = items[index-1];
@@ -617,7 +676,7 @@ module.exports = function (window) {
                 }
             },
 
-            redefineStartItem: function(resetContainer, retry) {
+            redefineStartItem: function(resetContainer) {
                 var element = this,
                     model = element.model,
                     horizontal = model.horizontal,
@@ -627,11 +686,10 @@ module.exports = function (window) {
                     size = horizontal ? 'width' : 'height',
                     borderStart = element.getStyle('border-'+start+'width'),
                     iscrollerStart = element[start] + (parseInt(borderStart, 10) || 0),
-                    scrollContSize = scrollContainer.getData('_contSize'),
                     vChildNodes = scrollContainer.vnode.vChildNodes,
                     len = vChildNodes.length,
                     partial, i, startItem, domNode, endPos, foundNode, corrections, highestEnd,
-                    contSize, firstNode, sectionsShifted, currentStart, currentShift, currentMarginStart;
+                    contSize, firstNode, currentStart, currentMarginStart;
 
                 // find the first childNode that lies within the visible area:
                 for (i=0; (i<len); i++) {
