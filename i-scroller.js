@@ -12,7 +12,8 @@ module.exports = function (window) {
         Event = ITSA.Event,
         AUTO_EXPAND_DELAY = 200,
         AUTO_REFRESH_STARTITEM_DURING_SWIPE = 15, // not higher: during high-speed swipe you could loose the items
-        IParcel = require('i-parcel')(window),
+        CAPTURE_TIMEFRAME_BEFORE_MOUSEWHEEL = 100, // ms: the time to capture mousewheel-events before starting to swipe
+        NO_RESWIPE_INTERVAL = 1500,
         microtemplate = require('i-parcel/lib/microtemplate.js'),
         scrollers = [],
         Itag, autoExpandScrollers, registerScroller, unregisterScroller;
@@ -40,10 +41,44 @@ module.exports = function (window) {
         Event.before('mousewheel', function(e) {
             var node = e.target,
                 iscroller = node.getParent(),
-                delta = e['wheelDelta'+(iscroller.model.horizontal ? 'X' : 'Y')];
+                scrollValue = iscroller.getData('_scroller'),
+                delta = e['wheelDelta'+(iscroller.model.horizontal ? 'X' : 'Y')],
+                swiper = iscroller.getData('_swiper'),
+                timer, timer2;
+            e.preventDefault();
+            swiper && !iscroller.hasData('_noReswipe') && swiper.freeze();
+            if (!scrollValue) {
+                // start caching the wheeldata's
+                scrollValue = 0;
+                timer = ITSA.later(function() {
+                    var distance = iscroller.getData('_scroller'),
+                        speed = distance && Math.round(4*Math.abs(distance));
+                    timer.cancel();
+                    if (distance) {
+                        iscroller.setData('_noReswipe', true);
+                        swiper = iscroller.swipe(distance, speed, 'ease-out');
+                        timer2 = ITSA.later(function() {
+                            iscroller.removeData('_noReswipe');
+                        }, NO_RESWIPE_INTERVAL);
+                        swiper.finally(function() {
+                            timer2.cancel();
+                        });
+                    }
+                }, CAPTURE_TIMEFRAME_BEFORE_MOUSEWHEEL);
+            }
+            if (!iscroller.hasData('_dragging')) {
+                scrollValue -= delta;
+                iscroller.setData('_scroller', scrollValue);
+            }
+        }, 'i-scroller >span, i-table >span');
 
-console.warn('delta '+delta);
-e.preventDefault();
+        // TODO: magicmouse cannot be detected! 'touchstart' doesn't work on desktop
+        // TODO: ake it work
+        Event.before('touchstart', function(e) {
+            var node = e.target,
+                iscroller = node.getParent(),
+                swiper = iscroller.getData('_swiper');
+            swiper && swiper.freeze();
         }, 'i-scroller >span, i-table >span');
 
         Event.before('dd', function(e) {
@@ -80,7 +115,7 @@ e.preventDefault();
                 timer.cancel();
                 if (prevPos && currentPos && (prevPos!==currentPos)) {
                     distance = 8*(prevPos-currentPos);
-                    speed = Math.round(1*Math.abs(distance));
+                    speed = Math.round(2*Math.abs(distance));
                     iscroller.swipe(distance, speed, 'ease-out');
                 }
                 else {
@@ -226,7 +261,7 @@ e.preventDefault();
             iscroller.redefineStartItem();
         }, 'i-scroller >span, i-table >span');
 
-        Itag = IParcel.subClass(itagName, {
+        Itag = DOCUMENT.defineItag(itagName, {
             /*
              *
              * @property attrs
@@ -251,27 +286,54 @@ e.preventDefault();
 
             init: function() {
                 var element = this,
-                    // designNode = element.getItagContainer(),
+                    designNode = element.getItagContainer(),
+                    headerNodes = designNode.getAll('>section[is="header"]'),
+                    itemTemplate = designNode.getHTML(headerNodes),
                     model = element.model,
                     value = model.value || -1,
                     itemsize = model['item-size'] || '2em',
-                    startItem = model['start-item'] || 0;
-                element.defineWhenUndefined('value', value)
+                    startItem = model['start-item'] || 0,
+                    headers, i, len, headerNode, headerTemplate;
+                // when initializing: make sure NOT to overrule model-properties that already
+                // might have been defined when modeldata was boundend. Therefore, use `defineWhenUndefined`
+                // element.defineWhenUndefined('someprop', somevalue); // sets element.model.someprop = somevalue; when not defined yet
+                //
+                // we MUST avoid circular reference: we cannot accept `template` as a property-field --> we remove those.
+                // Also, because < and > are escaped by text-nodes: we need to unescape them:
+                itemTemplate = itemTemplate.replaceAll('template', '')
+                                           .replaceAll('&lt;', '<')
+                                           .replaceAll('&gt;', '>');
+                element.defineWhenUndefined('template', itemTemplate)
+                       .defineWhenUndefined('value', value)
                        .defineWhenUndefined('item-size', itemsize)
                        .defineWhenUndefined('start-item', startItem)
                         // set the reset-value to the inital-value in case `reset-value` was not present
                        .defineWhenUndefined('reset-value', value);
+
+                // store headernodes when defined:
+                if (headerNodes && !element.headers) {
+                    headers = [];
+                    len = headerNodes.length;
+                    for (i=0; i<len; i++) {
+                        headerNode = headerNodes[i];
+                        headerTemplate = headerNode.getHTML().replaceAll('template', '')
+                                                             .replaceAll('&lt;', '<')
+                                                             .replaceAll('&gt;', '>');
+                        headers[headers.length] = headerTemplate;
+                    }
+                    element.model.headers = headers;
+                }
+
                 // store its current value, so that valueChange-event can fire:
                 element.setData('i-scroller-value', value);
-
-                // element.cleanupEvents();
-                // element.setupEvents();
 
                 // make it a focusable form-element:
                 element.setAttr('itag-formelement', 'true', true);
 
                 // define unique id:
                 element['i-id'] = ITSA.idGenerator('i-scroller');
+
+                element.setData('_map', new ITSA.LightMap());
 
                 element.itagReady().then(function() {
                     registerScroller(element);
@@ -340,8 +402,10 @@ e.preventDefault();
                     duration: duration
                 });
                 returnPromise = new window.Promise(function(resolve) {
-                    transPromise.then(function() {
+                    transPromise.finally(function() {
                         element.removeData('_swiper');
+                        element.removeData('_scroller');
+                        element.removeData('_noReswipe');
                         timer.cancel();
                         // go async to make model sets its new value
                         ITSA.async(function() {
@@ -362,6 +426,9 @@ e.preventDefault();
                     element.removeData('_dragging');
                     return transPromise.freeze();
                 };
+                returnPromise.catch(function(err) {
+                    console.info('transition: '+err);
+                });
                 return returnPromise;
             },
 
@@ -727,30 +794,56 @@ e.preventDefault();
                     model = element.model,
                     template = model.template,
                     headers = model.headers,
+                    map = element.getData('_map'),
                     uriProperty = model['uri-property'],
                     odd = ((index%2)!==0),
                     itemContent = '',
-                    len, i, header, headerContent, prevHeaderContent;
+                    generateDef, prevHeaderContentDefinition, headerContentDefinition, sameHeader;
 
-                if (headers) {
-                    len = headers.length;
+                sameHeader = function(def1, def2, level) {
+                    var iString, i;
+                    for (i=level; i>=0; i--) {
+                        iString = String(i);
+                        if (def1[iString]!==def2[iString]) {
+                            return false;
+                        }
+                    }
+                    return true;
+                };
+
+                generateDef = function(item, addToContent) {
+                    var len = headers.length,
+                        def = {},
+                        i, header, headerContent;
                     for (i=0; i<len; i++) {
                         header = headers[i];
                         // only process if item is an object
-                        if (typeof oneItem!=='string') {
+                        if (typeof item!=='string') {
                             if (header.indexOf('<%')!==-1) {
-                                headerContent = microtemplate(header, oneItem);
+                                headerContent = microtemplate(header, item);
                             }
                             else {
-                                headerContent += header.substitute(oneItem);
+                                headerContent = header.substitute(item);
                             }
-                            oneItem.setData('_header'+i, headerContent);
-                            prevHeaderContent = prevItem && prevItem.getData('_header'+i);
-                            if (headerContent !== prevHeaderContent) {
+                            def[String(i)] = headerContent;
+                            if (addToContent && (!prevHeaderContentDefinition || !sameHeader(def, prevHeaderContentDefinition, i))) {
                                 itemContent += '<section class="header'+i+'">'+headerContent+'</section>';
                             }
                         }
                     }
+                    return def;
+                };
+
+                if (headers) {
+                    headerContentDefinition = {};
+                    if (prevItem) {
+                        prevHeaderContentDefinition = map.get(prevItem);
+                        prevHeaderContentDefinition || (prevHeaderContentDefinition=generateDef(prevItem));
+                    }
+
+                    headerContentDefinition = generateDef(oneItem, true);
+
+                    map.set(oneItem, headerContentDefinition);
                 }
                 if (oneItem[uriProperty]) {
                     itemContent += '<a href="'+oneItem[uriProperty]+'">';
@@ -779,6 +872,7 @@ e.preventDefault();
 
             destroy: function() {
                 unregisterScroller(this);
+                this.getData('_map').clear();
             }
         });
 

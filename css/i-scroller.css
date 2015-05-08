@@ -46,8 +46,7 @@ i-scroller {
 
 i-scroller >span,
 i-scroller >span >section,
-i-scroller >span >section >section,
-i-scroller span.item {
+i-scroller section.item {
     -webkit-box-sizing: border-box;
     -moz-box-sizing: border-box;
     box-sizing: border-box;
@@ -81,11 +80,30 @@ i-scroller >span >section {
     overflow: hidden;
 }
 
-i-scroller >span >section >section {
+i-scroller >span >section >a,
+i-scroller >span >section >a:visited,
+i-scroller >span >section >a:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+i-scroller section.item {
     display: block;
     width: 100%;
 }
 
-i-scroller span.item.empty {
+i-scroller section.item.empty {
     opacity: 0;
+}
+
+i-scroller section.header0 {
+    background-color: #000;
+    color: #FFF;
+    padding: 0.5em;
+}
+
+i-scroller section.header1 {
+    background-color: #666;
+    color: #FFF;
+    padding: 0.2em 0.5em;
 }
