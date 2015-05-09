@@ -46,6 +46,7 @@ i-scroller {
 
 i-scroller >span,
 i-scroller >span >section,
+i-scroller section.fixed-header,
 i-scroller section.item {
     -webkit-box-sizing: border-box;
     -moz-box-sizing: border-box;
@@ -87,6 +88,20 @@ i-scroller >span >section >a:hover {
     color: inherit;
 }
 
+i-scroller section.fixed-header {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 899;
+    margin: 0;
+}
+
+/* overrule z-index dragged element --> must be kept below.fixed-header */
+i-scroller .dd-high-z {
+    z-index: 898 !important;
+}
+
 i-scroller section.item {
     display: block;
     width: 100%;
@@ -96,13 +111,13 @@ i-scroller section.item.empty {
     opacity: 0;
 }
 
-i-scroller section.header0 {
+i-scroller >section.header0 {
     background-color: #000;
     color: #FFF;
     padding: 0.5em;
 }
 
-i-scroller section.header1 {
+i-scroller >section.header1 {
     background-color: #666;
     color: #FFF;
     padding: 0.2em 0.5em;

@@ -355,7 +355,9 @@ module.exports = function (window) {
             render: function() {
                 var element = this,
                     containerTag = element.contTag,
-                    content = '<'+containerTag+' plugin-dd="true" dd-direction="y"></'+containerTag+'>';
+                    content = '<section class="fixed-header"></section>';
+
+                content += '<'+containerTag+' plugin-dd="true" dd-direction="y"></'+containerTag+'>';
                 // mark element its i-id:
                 element.setAttr('i-id', element['i-id']);
 
@@ -363,7 +365,8 @@ module.exports = function (window) {
                 element.setHTML(content);
                 // for quick access to the scrollcontainer, we add it as data:
                 element.setData('_scrollContainer', element.getElement('>'+containerTag));
-
+                // same for fixed-header:
+                element.setData('_fixedHeaderNode', element.getElement('>section.fixed-header'));
             },
 
            /**
@@ -432,6 +435,8 @@ module.exports = function (window) {
                 return returnPromise;
             },
 
+            templateHeaders: true,
+
             sync: function() {
                 var element = this,
                     model = element.model,
@@ -441,21 +446,38 @@ module.exports = function (window) {
                     start = horizontal ? 'left' : 'top',
                     end = horizontal ? 'right' : 'bottom',
                     iscrollerSize = element[size],
+                    scrollContainer = element.getData('_scrollContainer'),
+                    fixedHeaderNode = element.getData('_fixedHeaderNode'),
                     borderStart = element.getStyle('border-'+start+'width'),
                     borderBottom = element.getStyle('border-'+end+'width'),
                     iscrollerStart = element[start] + (parseInt(borderStart, 10) || 0),
                     iscrollerBottom = element[end] + (parseInt(borderBottom, 10) || 0),
-                    scrollContainer = element.getData('_scrollContainer'),
                     isDragging = element.hasData('_dragging'),
                     startItem = isDragging ? element.getData('_draggedStartItem') : model['start-item'], // impossible to overrule when dragging
                     startItemFloor = Math.floor(startItem),
                     scrollContainerVChildNodes = scrollContainer.vnode.vChildNodes,
                     indentNode, indentNode2, shiftFromFirstRange, topNode, size2, firstIsInside, lastIsInside, draggedUp, middleNodeIndex, nodeSize, contSize,
-                    beyondEdge, beyondEdgecount, node, shift, dif, prevFirstIndex, prevLastIndex, count, noOverlap, middleNode, firstChildNode,
+                    beyondEdge, beyondEdgecount, node, shift, dif, prevFirstIndex, prevLastIndex, count, noOverlap, middleNode, firstChildNode, headerContentDefinition,
                     firstIndex, j, k, len, i, lastIndex, item, lowerNode, prevItem, lowerShiftNodeIndex, sectionsShifted, currentShift;
 
-                // if container is empty: fill it as far as needed
                 firstIndex = Math.max(0, Math.round((startItem - margeItems)));
+
+                if (element.templateHeaders) {
+                    if (model.fixedHeader) {
+                        headerContentDefinition = element.getData('_map').get(items[startItemFloor]);
+                        headerContentDefinition && fixedHeaderNode.setHTML('<section class="header0">'+headerContentDefinition['0']+'</section>');
+                        fixedHeaderNode.removeClass('itsa-hidden');
+                        iscrollerStart += fixedHeaderNode[size];
+                    }
+                    else {
+                        fixedHeaderNode.setClass('itsa-hidden');
+                    }
+                }
+                else if (!fixedHeaderNode.hasClass('itsa-hidden')) {
+                    iscrollerStart += fixedHeaderNode[size];
+                }
+
+                // if container is empty: fill it as far as needed
                 contSize = 0;
                 if (scrollContainer.isEmpty()) {
                     lastIndex = items.length-1;
