@@ -570,7 +570,7 @@ module.exports = function (window) {
                                     prevItem = items[k];
                                     item = items[++k];
                                     node = scrollContainerVChildNodes[j].domNode;
-                                    if (node.getData('_index')!==k) {
+                                    // if (node.getData('_index')!==k) {
                                         if (item) {
                                             node.setHTML(element.drawItem(item, prevItem, k));
                                             lowerNode = node;
@@ -580,7 +580,7 @@ module.exports = function (window) {
                                             node.setClass('empty');
                                         }
                                         node.setData('_index', k);
-                                    }
+                                    // }
                                     nodeSize = node[size];
                                     contSize += nodeSize;
                                     (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
@@ -596,7 +596,7 @@ module.exports = function (window) {
                                     prevItem = items[k];
                                     item = items[++k];
                                     node = scrollContainerVChildNodes[j].domNode;
-                                    if (node.getData('_index')!==k) {
+                                    // if (node.getData('_index')!==k) {
                                         if (item) {
                                             node.setHTML(element.drawItem(item, prevItem, k));
                                             lowerNode = node;
@@ -606,7 +606,7 @@ module.exports = function (window) {
                                             node.setClass('empty');
                                         }
                                         node.setData('_index', k);
-                                    }
+                                    // }
                                     (firstChildNode===node) || node.removeInlineStyle('margin-'+start);
                                     nodeSize = node[size];
                                     contSize += nodeSize;

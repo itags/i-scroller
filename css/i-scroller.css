@@ -44,6 +44,10 @@ i-scroller {
     box-sizing: border-box;
 }
 
+i-scroller section.item.odd {
+    background-color: #DDD;
+}
+
 i-scroller >span,
 i-scroller >span >section,
 i-scroller section.fixed-header,
