@@ -10,7 +10,8 @@ module.exports = function (window) {
         DOCUMENT = window.document,
         ITSA = window.ITSA,
         Event = ITSA.Event,
-        AUTO_EXPAND_DELAY = 200,
+        // AUTO_EXPAND_DELAY = 200,
+        AUTO_EXPAND_DELAY = 20000000,
         AUTO_REFRESH_STARTITEM_DURING_SWIPE = 15, // not higher: during high-speed swipe you could loose the items
         CAPTURE_TIMEFRAME_BEFORE_MOUSEWHEEL = 100, // ms: the time to capture mousewheel-events before starting to swipe
         NO_RESWIPE_INTERVAL = 1500,
@@ -111,7 +112,8 @@ module.exports = function (window) {
             dragPromise.finally(function() {
                 var distance, speed;
                 scrollContainer.removeData('_dragUp')
-                               .removeData('_prevPos');
+                               .removeData('_prevPos')
+                               .removeData('_prevPosX');
                 timer.cancel();
                 if (prevPos && currentPos && (prevPos!==currentPos)) {
                     distance = 8*(prevPos-currentPos);
@@ -156,12 +158,14 @@ module.exports = function (window) {
             var node = e.target,
                 iscroller = node.getParent(),
                 scrollContainer = iscroller.getData('_scrollContainer'),
+                fixedHeaderNode = iscroller.getData('_fixedHeaderNode'),
                 model = iscroller.model,
-                items = model.items,
+                items = iscroller.getData('items'), // is the cloned version!
                 horizontal = model.horizontal,
                 end = horizontal ? 'right' : 'bottom',
                 start = horizontal ? 'left' : 'top',
-                up, clientX, clientY, boundaryNode, prevPos, currentPos;
+                up, clientX, clientY, boundaryNode, prevPos, currentPos, position, newPosition, prevPosX,
+                rightBorderWidth, leftBorderWidth, iscrollerInnerWidth;
 
             if (typeof e.center==='object') {
                 clientX = e.center.x;
@@ -171,7 +175,7 @@ module.exports = function (window) {
                 clientX = e.clientX;
                 clientY = e.clientY;
             }
-            if (!iscroller.insidePos(e.xMouse, e.yMouse)) {
+            if (!iscroller.insidePos(e.xMouse, e.yMouse) || fixedHeaderNode.insidePos(e.xMouse, e.yMouse)) {
                 e.preventDefault();
             }
             else {
@@ -196,6 +200,26 @@ module.exports = function (window) {
                         (boundaryNode[start]>=iscroller[start]) && e.preventDefault();
                     }
                 }
+
+                // in case of scroller in y and movable in x (itable) --> x cannot go out of boundaries
+                if (scrollContainer._plugin.dd.model.direction==='xy') {
+                    prevPosX = scrollContainer.getData('_prevPosX') || e.clientX;
+                    // first check lower boundary:
+                    leftBorderWidth = parseInt(iscroller.getStyle('border-left-width'), 10);
+                    position = scrollContainer.left - iscroller.left - leftBorderWidth;
+                    newPosition = position + e.xMouse - prevPosX;
+                    if (newPosition>0) {
+                        e.xMouse = prevPosX - position; // --> leads to newPosition 0
+                    }
+                    else {
+                        rightBorderWidth = parseInt(iscroller.getStyle('border-right-width'), 10);
+                        iscrollerInnerWidth = iscroller.width - leftBorderWidth - rightBorderWidth;
+                        if ((newPosition+scrollContainer.width) < iscrollerInnerWidth) {
+                            // check upper boundary:
+                            e.xMouse = iscrollerInnerWidth + prevPosX - position - scrollContainer.width; // --> leads to newPosition = max
+                        }
+                    }
+                }
             }
         }, 'i-scroller >span, i-table >span');
 
@@ -205,11 +229,11 @@ module.exports = function (window) {
                 iscroller = node.getParent(),
                 scrollContainer = iscroller.getData('_scrollContainer'),
                 model = iscroller.model,
-                items = model.items,
+                items = iscroller.getData('items'), // is the cloned version!
                 horizontal = model.horizontal,
                 end = horizontal ? 'right' : 'bottom',
                 start = horizontal ? 'left' : 'top',
-                up, clientX, clientY, boundaryNode, difference, value, isDragging, prevPos, currentPos;
+                up, clientX, clientY, boundaryNode, difference, value, isDragging, prevPos, currentPos, fixedHeaderNode;
             if (typeof e.center==='object') {
                 clientX = e.center.x;
                 clientY = e.center.y;
@@ -256,8 +280,14 @@ module.exports = function (window) {
                 }
                 scrollContainer.setInlineStyle(start, value+'px');
             }
+            if (scrollContainer._plugin.dd.model.direction==='xy') {
+                // we need to sync the x-position of the headernode with the containernode
+                fixedHeaderNode = iscroller.getData('_fixedHeaderNode');
+                fixedHeaderNode.setInlineStyle('left', scrollContainer.getInlineStyle('left'));
+            }
             scrollContainer.setData('_dragUp', up)
-                           .setData('_prevPos', currentPos);
+                           .setData('_prevPos', currentPos)
+                           .setData('_prevPosX', e.xMouse); // extra needed in case of xy movable containers
             iscroller.redefineStartItem();
         }, 'i-scroller >span, i-table >span');
 
@@ -338,9 +368,19 @@ module.exports = function (window) {
                 element.itagReady().then(function() {
                     registerScroller(element);
                 });
+                // we need to clone the items-array, because the i-table instance can sort on its own:
+                element.cloneItems();
+                // also, set a object-observer on `items` --> in case of changes, we need to update
+                model.items.observe(element.cloneItems);
             },
 
             contTag: 'span',
+
+            cloneItems: function() {
+                var element = this,
+                    model = element.model;
+                element.setData('items', model.items.deepClone());
+            },
 
            /**
             * Redefines the childNodes of both the vnode as well as its related dom-node. The new
@@ -357,7 +397,7 @@ module.exports = function (window) {
                     containerTag = element.contTag,
                     content = '<section class="fixed-header"></section>';
 
-                content += '<'+containerTag+' plugin-dd="true" dd-direction="y"></'+containerTag+'>';
+                content += '<'+containerTag+' plugin-dd="true" dd-direction="'+element.getDirection()+'"></'+containerTag+'>';
                 // mark element its i-id:
                 element.setAttr('i-id', element['i-id']);
 
@@ -367,6 +407,10 @@ module.exports = function (window) {
                 element.setData('_scrollContainer', element.getElement('>'+containerTag));
                 // same for fixed-header:
                 element.setData('_fixedHeaderNode', element.getElement('>section.fixed-header'));
+            },
+
+            getDirection: function() {
+                return this.model.horizontal ? 'x' : 'y';
             },
 
            /**
@@ -440,7 +484,7 @@ module.exports = function (window) {
             sync: function() {
                 var element = this,
                     model = element.model,
-                    items = model.items,
+                    items = element.getData('items'), // is the cloned version!
                     horizontal = model.horizontal,
                     size = horizontal ? 'width' : 'height',
                     start = horizontal ? 'left' : 'top',
@@ -459,6 +503,10 @@ module.exports = function (window) {
                     indentNode, indentNode2, shiftFromFirstRange, topNode, size2, firstIsInside, lastIsInside, draggedUp, middleNodeIndex, nodeSize, contSize,
                     beyondEdge, beyondEdgecount, node, shift, dif, prevFirstIndex, prevLastIndex, count, noOverlap, middleNode, firstChildNode, headerContentDefinition,
                     firstIndex, j, k, len, i, lastIndex, item, lowerNode, prevItem, lowerShiftNodeIndex, sectionsShifted, currentShift;
+
+
+                scrollContainer._plugin.dd && (scrollContainer._plugin.dd.model.direction=element.getDirection());
+
 
                 firstIndex = Math.max(0, Math.round((startItem - margeItems)));
 
@@ -728,7 +776,7 @@ module.exports = function (window) {
                     scrollContainerVChildNodes = scrollContainer.vnode.vChildNodes,
                     len = scrollContainerVChildNodes.length,
                     lowerNode = scrollContainer.getData('_lowerNode'),
-                    items = model.items,
+                    items = element.getData('items'), // is the cloned version!
                     horizontal = model.horizontal,
                     start = horizontal ? 'left' : 'top',
                     end = horizontal ? 'right' : 'bottom',
@@ -893,8 +941,11 @@ module.exports = function (window) {
             },
 
             destroy: function() {
-                unregisterScroller(this);
-                this.getData('_map').clear();
+                var element = this,
+                    model = element.model;
+                unregisterScroller(element);
+                element.getData('_map').clear();
+                model.items.unobserve(element.cloneItems);
             }
         });
 
