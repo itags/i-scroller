@@ -10,8 +10,7 @@ module.exports = function (window) {
         DOCUMENT = window.document,
         ITSA = window.ITSA,
         Event = ITSA.Event,
-        // AUTO_EXPAND_DELAY = 200,
-        AUTO_EXPAND_DELAY = 20000000,
+        AUTO_EXPAND_DELAY = 200,
         AUTO_REFRESH_STARTITEM_DURING_SWIPE = 15, // not higher: during high-speed swipe you could loose the items
         CAPTURE_TIMEFRAME_BEFORE_MOUSEWHEEL = 100, // ms: the time to capture mousewheel-events before starting to swipe
         NO_RESWIPE_INTERVAL = 1500,
@@ -480,6 +479,8 @@ module.exports = function (window) {
             },
 
             templateHeaders: true,
+
+// TODO: too high values of model['start-item'] throw an error
 
             sync: function() {
                 var element = this,
