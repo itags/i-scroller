@@ -898,7 +898,7 @@ module.exports = function (window) {
                             }
                             def[String(i)] = headerContent;
                             if (addToContent && (!prevHeaderContentDefinition || !sameHeader(def, prevHeaderContentDefinition, i))) {
-                                itemContent += '<section class="header'+i+'">'+headerContent+'</section>';
+                                itemContent += '<section class="header'+(i+1)+'">'+headerContent+'</section>';
                             }
                         }
                     }
