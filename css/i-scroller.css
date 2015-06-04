@@ -44,6 +44,10 @@ i-scroller {
     box-sizing: border-box;
 }
 
+i-scroller section.item.even {
+    background-color: #FFF;
+}
+
 i-scroller section.item.odd {
     background-color: #DDD;
 }

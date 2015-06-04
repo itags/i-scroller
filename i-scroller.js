@@ -369,8 +369,6 @@ module.exports = function (window) {
                 });
                 // we need to clone the items-array, because the i-table instance can sort on its own:
                 element.cloneItems();
-                // also, set a object-observer on `items` --> in case of changes, we need to update
-                model.items.observe(element.cloneItems);
             },
 
             contTag: 'span',
@@ -378,7 +376,8 @@ module.exports = function (window) {
             cloneItems: function() {
                 var element = this,
                     model = element.model;
-                element.setData('items', model.items.deepClone());
+                // iscroller doesn't need to deepclone the items: it can use its reference:
+                element.setData('items', model.items);
             },
 
            /**
@@ -946,7 +945,6 @@ module.exports = function (window) {
                     model = element.model;
                 unregisterScroller(element);
                 element.getData('_map').clear();
-                model.items.unobserve(element.cloneItems);
             }
         });
 
