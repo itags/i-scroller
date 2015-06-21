@@ -1,0 +1,132 @@
+/* ======================================================================= */
+/* ======================================================================= */
+/* ======================================================================= */
+/* Definition of itag shadow-css is done by defining a `dummy` css-rule    */
+/* for the dummy-element: `itag-css` --> its property (also dummy) `i-tag` */
+/* will define which itag will be css-shadowed                             */
+/* ======================================================================= */
+itag-css {
+    i-tag: i-scroller;  /* set the property-value to the proper itag */
+}
+/* ======================================================================= */
+/* ======================================================================= */
+/* ======================================================================= */
+
+
+/* ================================= */
+/* set invisiblity when not rendered */
+/* ================================= */
+i-scroller:not(.itag-rendered) {
+    /* don't set visibility to hidden --> you cannot set a focus on those items */
+    opacity: 0 !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    z-index: -1;
+}
+
+i-scroller:not(.itag-rendered) * {
+    opacity: 0 !important;
+}
+/* ================================= */
+
+i-scroller {
+    margin: 0;
+    display: inline-block;
+    position: relative;
+    vertical-align: top;
+    border: solid 1px #000;
+    min-width: 1em;
+    min-height: 1em;
+    overflow: hidden;
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+i-scroller section.item.even {
+    background-color: #FFF;
+}
+
+i-scroller section.item.odd {
+    background-color: #DDD;
+}
+
+i-scroller >span,
+i-scroller >span >section,
+i-scroller section.fixed-header,
+i-scroller section.item {
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+i-scroller >span {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+i-scroller >span[dd-direction="y"] {
+    left: 0 !important;
+}
+
+i-scroller >span[dd-direction="x"] {
+    top: 0 !important;
+}
+
+i-scroller[horizontal="true"] >span {
+    width: inherit;
+    height: 100%;
+}
+
+i-scroller >span >section {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 1em;
+    overflow: hidden;
+}
+
+i-scroller >span >section >a,
+i-scroller >span >section >a:visited,
+i-scroller >span >section >a:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+i-scroller section.fixed-header {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 899;
+    margin: 0;
+}
+
+/* overrule z-index dragged element --> must be kept below.fixed-header */
+i-scroller .dd-high-z {
+    z-index: 898 !important;
+}
+
+i-scroller section.item {
+    display: block;
+    width: 100%;
+}
+
+i-scroller section.item.empty {
+    opacity: 0;
+}
+
+i-scroller section.header1 {
+    background-color: #000;
+    color: #FFF;
+    padding: 0.5em;
+}
+
+i-scroller section.header2 {
+    background-color: #666;
+    color: #FFF;
+    padding: 0.3em 0.5em;
+}
