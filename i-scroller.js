@@ -337,7 +337,8 @@ module.exports = function (window) {
                        .defineWhenUndefined('item-size', itemsize)
                        .defineWhenUndefined('start-item', startItem)
                         // set the reset-value to the inital-value in case `reset-value` was not present
-                       .defineWhenUndefined('reset-value', value);
+                       .defineWhenUndefined('reset-value', value)
+                       .defineWhenUndefined('items', []);
 
                 // store headernodes when defined:
                 if (headerNodes && !element.headers) {
